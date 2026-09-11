@@ -15,13 +15,16 @@ Invoke when the user says "reflect" or "/skill:reflect". Skip when the conversat
 
 ### 1. Locate the active transcript
 
-The parent finds its own transcript file before fanning out. Use `$PI_SESSION_FILE` from the bash tool environment. That is the active session JSONL. If it is unset (an ephemeral session), write a tight digest of the session and pass that instead. To scan history, list `~/.pi/agent/sessions/<workspace-slug>/*.jsonl`, newest first, where the slug is the workspace path with the leading slash dropped and each `/` turned into `-`.
+The parent finds its own transcript file before fanning out. Use `$PI_SESSION_FILE` from the bash tool environment: it is the absolute path to the active session JSONL. If it is unset (an ephemeral session), write a tight digest of the session and pass that instead.
+
+When `$PI_SESSION_FILE` is unavailable but the session was persisted, recover the file from this workspace's history. Sessions live in `<agent dir>/sessions/--<workspace-slug>--/*.jsonl`, where `<agent dir>` is `${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}` and the session directory honors `$PI_CODING_AGENT_SESSION_DIR`; the slug is the workspace's absolute path with the leading separator dropped and every slash, backslash, or colon turned into `-`. Scan only this workspace's directory: globbing across workspaces crosses boundaries and reads private chats from unrelated projects.
 
 ```bash
-ls -t "$HOME/.pi/agent/sessions"/*/*.jsonl 2>/dev/null | head -10
+session_dir=${PI_CODING_AGENT_SESSION_DIR:-"${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/sessions/--$(pwd | sed 's|^/||; s|[/\\:]|-|g')--"}
+ls -t "$session_dir"/*.jsonl 2>/dev/null | head -10
 ```
 
-For each candidate, read the first JSONL line and check that it contains the conversation's opening user prompt. Take the matching path. If no path resolves, write a tight digest of the session and pass that instead.
+A pi session file starts with a session header line (`{"type":"session",...}`), not the prompt. For each candidate, find the first `{"type":"message",...}` line whose `message.role` is `"user"` and check that its text contains the conversation's opening user prompt. Take the matching path. If no path resolves, write a tight digest of the session and pass that instead.
 
 ### 2. Spawn three reviewers in parallel
 

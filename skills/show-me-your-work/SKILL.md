@@ -52,7 +52,7 @@ Commit it only when the work is ambitious enough that a reviewer needs the trail
 
 ## Audit the log against the transcript
 
-At the end of the run, before handing back, check the log told the truth. Read this run's transcript at `$PI_SESSION_FILE`. When it is unset, use the digest the run kept. Don't read other projects' session files; that reads unrelated private chats. Walk the log against what actually happened:
+At the end of the run, before handing back, check the log told the truth. Read this run's transcript at `$PI_SESSION_FILE` from the bash tool environment. If it is unset (an ephemeral session), write a tight digest of the session and audit against that. Don't read other projects' session files; that reads unrelated private chats. Walk the log against what actually happened:
 
 - Every row maps to a real action. Cut invented or aspirational entries.
 - Each row's evidence resolves and shows what the row claims.
@@ -63,7 +63,7 @@ Fix the log, not the story. If the work diverged from what a row claims, the row
 
 ## Cross-model review of the trail
 
-Before handing back, spawn a `subagent` call on a different model family from the one that did the work, passing an explicit `model:` from `pi --list-models` or the `judgment and prose` role. Self-review is not a substitute. The subagent reads the audit trail and the run's transcript, then flags what the user should pay attention to. Not a redo of the work, a scan for what's suboptimal or risky.
+Before handing back, spawn a `subagent` call with `agent: worker` on a different model family from the one that did the work, passing either an explicit `model:` from `pi --list-models` or `role: "judgment and prose"`. Self-review is not a substitute. The subagent reads the audit trail and the run's transcript, then flags what the user should pay attention to. Not a redo of the work, a scan for what's suboptimal or risky.
 
 - Decisions logged with weak or absent evidence.
 - Verification steps skipped or claimed without proof in the transcript.

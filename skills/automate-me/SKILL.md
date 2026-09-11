@@ -13,7 +13,7 @@ This skill orchestrates three others: an inline mining pass (see step 1), the **
 
 ### 0. Check for an existing skill
 
-Look recursively for `.pi/skills/**/*-mode/SKILL.md` and `~/.pi/agent/skills/*-mode/SKILL.md` matching the user's handle. Mode skills can live in a personal category directory (`.pi/skills/<handle>/`), not only at the top level. If one exists, confirm intent with `ask_question` (unless they already said "update my skill" or similar):
+Look recursively for `.pi/skills/**/*-mode/SKILL.md` and `~/.pi/agent/skills/*-mode/SKILL.md` matching the user's handle. Mode skills can live in a personal category directory (`.pi/skills/<handle>/`), not only at the top level. If one exists, confirm intent in chat with the options below (unless they already said "update my skill" or similar):
 
 - Update the existing skill (default for repeat runs)
 - Start fresh (rare, ask why before doing it)
@@ -25,9 +25,9 @@ Update mode changes the rest of the flow:
 
 ### 1. Mine their history
 
-Locate the active workspace's transcripts before fanning out. The active session file is `$PI_SESSION_FILE`; for history, list `~/.pi/agent/sessions/<workspace-slug>/*.jsonl`, where the slug is the workspace path with the leading slash dropped and each `/` turned into `-`. Use only that workspace's directory. Don't read another project's sessions without being asked; that crosses workspace boundaries and reads private chats from unrelated projects.
+Locate the active workspace's transcripts before fanning out. The active session file is `$PI_SESSION_FILE` (unset for an ephemeral session). For history, list `<agent dir>/sessions/--<workspace-slug>--/*.jsonl` newest first, where `<agent dir>` is `${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}` and the session directory honors `$PI_CODING_AGENT_SESSION_DIR`; the slug is the workspace's absolute path with the leading separator dropped and every slash, backslash, or colon turned into `-`. Use only that workspace's directory. Don't read another project's sessions without being asked; that crosses workspace boundaries and reads private chats from unrelated projects.
 
-Survey recent agent conversations within that scope for recurring patterns. Run multiple parallel subagents across slices of history (e.g. last 2-4 weeks, split into 3 slices so each has enough material). Each slice mining subagent reads transcripts from the workspace-scoped path the parent provides, looks for the signals below, and returns a short structured list of patterns it saw with evidence pointers. Default signals worth hunting:
+Survey recent agent conversations within that scope for recurring patterns. In one message, run multiple parallel `subagent` calls (`agent: worker`) across slices of history (e.g. last 2-4 weeks, split into 3 slices so each has enough material). Each slice mining subagent reads transcripts from the workspace-scoped path the parent provides, looks for the signals below, and returns a short structured list of patterns it saw with evidence pointers. Default signals worth hunting:
 
 - Response preferences (length, tone, format, "dumb it down" corrections)
 - Delegation habits (subagents, models, specialized workflows, parallelism)
@@ -40,9 +40,9 @@ Cross-check across slices before elevating a signal. Patterns seen in 2+ slices 
 
 ### 2. Ask the user directly
 
-Mining misses intent that hasn't come up yet. Use the `ask_question` tool (structured multi-choice) rather than asking the user to type from scratch.
+Mining misses intent that hasn't come up yet. Offer a short numbered list of options in chat (or a question tool when the session exposes one) rather than asking the user to type from scratch.
 
-Shape: one or two questions with 4-6 options each, `allow_multiple: true` for category questions. Start broad ("Which areas matter most?"), then follow up on selected areas with specific options. After the structured rounds, one free-form chat question catches anything the options missed.
+Shape: one or two questions with 4-6 options each; category questions can take more than one answer. Start broad ("Which areas matter most?"), then follow up on selected areas with specific options. After those rounds, one free-form chat question catches anything the options missed.
 
 Don't dump 20 questions.
 
@@ -51,7 +51,7 @@ Don't dump 20 questions.
 Group the combined signals into sections. Common ones (use only what applies):
 
 - **Response style**: length, tone, format.
-- **Autonomy**: how much to do without asking, MCP tool use.
+- **Autonomy**: how much to do without asking, tool use.
 - **Understand first**: which skills to reach for when scoping or investigating a change.
 - **Subagents**: default, parallelism, model-to-task, specialized workflows.
 - **Prose / code discipline**: principles, lint tools, style guides.
@@ -67,9 +67,9 @@ Use the **create-skill** skill to author the skill. Placement:
 
 - Path: preserve an existing mode skill's category. For a new mode, use `.pi/skills/<handle>/<handle>-mode/SKILL.md` when the repo has an established personal category for that handle. Otherwise default to `.pi/skills/<handle>-mode/SKILL.md` in the project (or `~/.pi/agent/skills/<handle>-mode/` if the user prefers a personal skill).
 - Handle: the user's first name or chosen identifier.
-- Frontmatter `description`: trigger on their name + `/<handle>-mode` + "work in their style", not on generic keywords like "write code" or "review PR".
+- Frontmatter `description`: trigger on their name + `/skill:<handle>-mode` + "work in their style", not on generic keywords like "write code" or "review PR".
 - Frontmatter formatting: follow `create-skill`'s YAML rules. Keep `description` as one YAML scalar. Quote it or use `description: >-` with indented continuation lines when punctuation or wrapping requires it.
-- Frontmatter `disable-model-invocation: true` by default. Opt out only if the user explicitly wants their mode to apply on every turn.
+- Frontmatter `disable-model-invocation: true` by default. Opt out only if the user explicitly wants the agent to discover and apply their mode on its own.
 
 ### 5. Iterate on prose
 
