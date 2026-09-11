@@ -1,0 +1,67 @@
+# Benny triage. Copy to .github/workflows/benny-triage.yml in the target
+# repository and adjust the secrets and the pi install step.
+#
+# pi has no hosted automation product, so the trigger is a repository dispatch.
+# Whatever receives the Slack event (a small relay, a Slack workflow, or an
+# incoming-webhook bridge) posts:
+#
+#   POST /repos/{owner}/{repo}/dispatches
+#   { "event_type": "benny-report",
+#     "client_payload": { "channel": "C0123", "ts": "1700000000.000100" } }
+#
+# `workflow_dispatch` is the manual path for a test report.
+name: benny-triage
+
+on:
+  repository_dispatch:
+    types: [benny-report]
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Source Slack channel id
+        required: true
+      ts:
+        description: Source message ts (thread root or report)
+        required: true
+
+concurrency:
+  group: benny-triage-${{ github.event.client_payload.channel || inputs.channel }}-${{ github.event.client_payload.ts || inputs.ts }}
+  cancel-in-progress: false
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install pi
+        run: npm install -g --ignore-scripts @earendil-works/pi-coding-agent
+
+      - name: Install project packages
+        run: pi install -l git:github.com/gh0stwin/pi-pstack
+
+      - name: Triage the report
+        env:
+          # Set the provider key pi should use. Add BENNY_SLACK_BOT_TOKEN only
+          # when the repository's Slack CLI needs it.
+          PI_PROVIDER_KEY: ${{ secrets.PI_PROVIDER_KEY }}
+          BENNY_SLACK_BOT_TOKEN: ${{ secrets.BENNY_SLACK_BOT_TOKEN }}
+          BENNY_EVENT: ${{ toJSON(github.event.client_payload) }}
+        run: |
+          set -euo pipefail
+          event='${{ toJSON(github.event.client_payload) }}'
+          if [ "$event" = '{}' ] || [ -z "$event" ]; then
+            event=$(printf '{"channel":"%s","ts":"%s"}' '${{ inputs.channel }}' '${{ inputs.ts }}')
+          fi
+          node .pi/automations/benny/runner/benny-run.ts \
+            --mode triage \
+            --config .pi/benny/configuration.yaml \
+            --event "$event"
