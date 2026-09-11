@@ -4,7 +4,7 @@ Rigorous agent workflows for pi: poteto-mode, 23 principles, 23 playbooks, role-
 
 This is a **port of the Cursor plugin [`pstack`](https://github.com/cursor/plugins/tree/main/pstack) v0.15.2** by Lauren Tan, adapted to run on pi. It is not the upstream project, and it is not affiliated with Cursor. Every change made during the port, every upstream file's disposition, and every capability that could not be carried over is recorded in [PORTING.md](./PORTING.md). Read that before trusting a workflow to behave exactly as the upstream documentation describes.
 
-> **Port status.** The port is landing in reviewable batches. This first batch contains the package skeleton and documentation only: `skills/`, `extensions/`, `agents/`, and `automations/` are not in the tree yet, so an install at this revision contributes no skills or extension, and links from this README and `docs/guide/` into those directories do not resolve yet. The sections below describe the completed package; the content batches follow.
+> **Port status.** The port is landing in reviewable batches. Batch 1 landed the package skeleton and documentation. This batch lands `skills/` with `poteto-mode` (including its scripts), `deslop`, `no-comments`, `technical-writing`, and `unslop`. `extensions/`, `agents/`, and `automations/` are not in the tree yet, so an install at this revision contributes those five skills but no extension or agents, and links from this README and `docs/guide/` into the not-yet-landed directories still do not resolve. The sections below describe the completed package; the remaining content batches follow.
 
 ## Install
 
@@ -93,10 +93,10 @@ subagent { chain: [{ agent: "how", task: "..." }, { agent: "worker", task: "... 
 
 ```bash
 npm install
-npm run check     # this batch: placeholder typecheck, then the test runner
+npm run check     # runs the ported skills' tests; root typecheck is a placeholder until extensions/ land
 ```
 
-Until the content batches land there are no TypeScript sources and no tests, so `npm run check` is a placeholder. It becomes the full check again — `extensions/` and the skills scripts typechecked, 58 ported tests run through `node --test` — once those directories exist.
+The ported `poteto-mode` scripts under `skills/poteto-mode/scripts/` are typechecked (`npm run typecheck`) and tested (`npm test`) from that directory, and `npm run check` runs those tests through `node --test`. The root `typecheck` script is still a placeholder until `extensions/` lands; it becomes the full check again — `extensions/` and all skills scripts typechecked — once that directory exists.
 
 ## License
 

@@ -1,0 +1,14 @@
+{
+  "name": "pi-pstack-tools",
+  "private": true,
+  "type": "module",
+  "description": "Typecheck and test manifest for the ported poteto-mode scripts. Runtime dependency (commander) lives at the package root, where pi installs it.",
+  "scripts": {
+    "test": "node --test 'watch-pr/**/*.test.ts' 'orch/**/*.test.ts'",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  }
+}
