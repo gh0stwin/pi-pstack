@@ -256,6 +256,53 @@ it("annotates review-bot threads with distinct review-pass counts", () => {
   expect(threads.map((thread) => thread.reviewBotPasses)).toEqual([3, 3]);
 });
 
+it("counts run markers only for a bot author", () => {
+  const response = {
+    data: {
+      repository: {
+        pullRequest: {
+          reviewThreads: {
+            nodes: [
+              {
+                id: "human",
+                isResolved: false,
+                comments: {
+                  nodes: [
+                    {
+                      body: "the severity of this regression is high",
+                      createdAt: "now",
+                      path: null,
+                      line: null,
+                      author: { login: "octocat" },
+                    },
+                  ],
+                },
+              },
+              {
+                id: "app",
+                isResolved: false,
+                comments: {
+                  nodes: [
+                    {
+                      body: "severity high",
+                      createdAt: "now",
+                      path: null,
+                      line: null,
+                      author: { login: "some-reviewer[bot]" },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        },
+      },
+    },
+  };
+  const threads = parseReviewThreads(response);
+  expect(threads.map((thread) => thread.isReviewBot)).toEqual([false, true]);
+});
+
 describe("context and stack discovery", () => {
   it("returns a fully explicit context without any reader call", async () => {
     const reader = fakeReader();

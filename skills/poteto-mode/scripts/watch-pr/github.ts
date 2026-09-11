@@ -351,14 +351,15 @@ const REVIEW_BOT_BODY_TOKENS = [
   "description start",
   "severity",
 ] as const;
+const BOT_AUTHOR = /(^|[^a-z])bot([^a-z]|$)|\[bot\]$/;
 function isReviewBot(comment: T.ReviewComment | null): boolean {
   if (comment === null) return false;
   const author = (comment.authorLogin ?? "").toLowerCase();
   const body = comment.body.toLowerCase();
-  return (
-    REVIEW_BOT_LOGINS.some((login) => author.includes(login)) ||
-    REVIEW_BOT_BODY_TOKENS.some((token) => body.includes(token))
-  );
+  if (REVIEW_BOT_LOGINS.some((login) => author.includes(login))) return true;
+  // Run markers only count for a bot author. A human reviewer can write
+  // "severity" in an ordinary sentence, and that must not read as a bot pass.
+  return BOT_AUTHOR.test(author) && REVIEW_BOT_BODY_TOKENS.some((token) => body.includes(token));
 }
 function passKey(comment: T.ReviewComment | null): string | null {
   if (comment === null) return null;
