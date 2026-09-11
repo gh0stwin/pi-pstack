@@ -9,7 +9,7 @@ This is the review document for the port. It records where the code came from, h
 | Upstream | `https://github.com/cursor/plugins`, directory `pstack/` |
 | Pinned revision | `f5bdd6826fd0a0d9cbc4347134c3a74a200b9d9d` (`fix(pstack): operator-neutral pronouns + in-chat status tick (#362)`) |
 | Upstream version | pstack `0.15.2` (from `.cursor-plugin/plugin.json`) |
-| Upstream license | MIT, Copyright (c) 2025 Cursor |
+| Upstream license | MIT, Copyright (c) 2026 Lauren Tan |
 | Upstream author | Lauren Tan |
 | Fetch command | `git clone https://github.com/cursor/plugins.git && git -C plugins checkout f5bdd6826fd0a0d9cbc4347134c3a74a200b9d9d` |
 | Upstream inventory | 158 files, 47 skill directories (24 top-level skills + 23 `principle-*`), 23 poteto-mode playbooks |
@@ -490,10 +490,7 @@ Notes on false positives the audit was tuned to avoid:
 
 ## 7. Open items at handoff
 
-This section is written for the restart. Everything else in this document describes finished work.
+Two open items remain after this batch.
 
-1. **`README.md` was a 75-byte stub at checkpoint time** and is being written in the same commit as this file.
-2. **The end-to-end model-backed smoke run is not done.** `pi -p` in the isolated config directory cannot reach a model, because the user's providers are installed as user-scope extensions (`pi-deepinfra`, `pi-novita-ai`, `morh-provider`) and the isolated config directory does not have working credentials for them. Skill discovery, frontmatter validity, and extension registration were verified through pi's own loader and `pi -e` instead, which covers the same code paths for parsing and registration but not a live model call.
-3. **`no-mistakes` has not been run.** The pipeline is the next step after this checkpoint.
-4. **The commit is a checkpoint, not the final history.** It records the whole port in one commit; the branch has no other commits beyond the base.
-5. **Benny's Slack CLI does not exist.** The pack documents the contract a repository must implement; no implementation ships, by design, because the token and the client are the user's.
+1. **The end-to-end model-backed smoke run is not done.** `pi -p` in the isolated config directory cannot reach a model, because the user's providers are installed as user-scope extensions (`pi-deepinfra`, `pi-novita-ai`, `morh-provider`) and the isolated config directory does not have working credentials for them. Skill discovery, frontmatter validity, and extension registration were verified through pi's own loader and `pi -e` instead, which covers the same code paths for parsing and registration but not a live model call.
+2. **Benny's Slack CLI does not exist.** The pack documents the contract a repository must implement; no implementation ships, by design, because the token and the client are the user's.

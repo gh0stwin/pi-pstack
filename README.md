@@ -100,4 +100,4 @@ Until the content batches land there are no TypeScript sources and no tests, so 
 
 ## License
 
-MIT. The upstream pstack plugin is MIT-licensed, Copyright (c) 2025 Cursor. The upstream license text is kept in [LICENSE](./LICENSE). See [PORTING.md](./PORTING.md) for provenance.
+MIT. The upstream pstack plugin is MIT-licensed, Copyright (c) 2026 Lauren Tan. The upstream license text is kept in [LICENSE](./LICENSE). See [PORTING.md](./PORTING.md) for provenance.

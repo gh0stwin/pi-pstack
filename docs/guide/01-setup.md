@@ -10,7 +10,7 @@ In a terminal, run:
 pi install git:github.com/gh0stwin/pi-pstack
 ```
 
-pi confirms the package is installed and loads its skills, extension, and prompts on the next start.
+pi confirms the package is installed and loads its skills and extension on the next start.
 
 To try it without installing:
 
