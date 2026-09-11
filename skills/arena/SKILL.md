@@ -29,7 +29,7 @@ The N candidates will receive the same prompt, so the prompt is the contract.
 
 ## Phase B: Fan out
 
-Spawn all N subagents in one message as parallel `subagent` calls, each with the task, the path to the shared grounding, its own output path, the model for its runner entry, and instructions to produce both the artifact and a short rationale.
+Spawn all N subagents in one message as parallel `subagent` calls with `agent: worker`, each with the task, the path to the shared grounding, its own output path, the model for its runner entry, and instructions to produce both the artifact and a short rationale.
 
 Each rationale names the alternatives the candidate considered and what it rejected.
 
@@ -37,7 +37,7 @@ If a candidate fails to produce output, proceed with N-1 and note the dropout in
 
 ## Phase C: Cross-judge
 
-After all Phase B candidates complete, choose one model from the `arena cross-judge pool` in `~/.pi/agent/pstack-models.json` (or `.pi/pstack-models.json`) when present. Otherwise use the built-in defaults listed by `/pstack-models`. Prefer a different model family from the parent's. Spawn one readonly judge subagent on that model. It sees the rubric and the candidates by path label, scores each criterion, and recommends a base with rationale. It runs in parallel with the parent's reading in Phase D, not with the candidates themselves. Don't spawn the judge while candidates are still writing.
+After all Phase B candidates complete, choose one model from the `arena cross-judge pool` in `~/.pi/agent/pstack-models.json` (or `.pi/pstack-models.json`) when present. Otherwise use the built-in defaults listed by `/pstack-models`. Prefer a different model family from the parent's. Spawn one readonly judge subagent (`agent: worker`, `readonly: true`) on that model. It sees the rubric and the candidates by path label, scores each criterion, and recommends a base with rationale. It runs in parallel with the parent's reading in Phase D, not with the candidates themselves. Don't spawn the judge while candidates are still writing.
 
 ## Phase D: Pick a base
 

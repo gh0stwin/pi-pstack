@@ -32,12 +32,12 @@ Write one clear paragraph. If you're unsure about the intent, ask the user befor
 
 ## Step 3, Spawn Reviewers
 
-Launch all reviewers in a single message as parallel `subagent` calls. Read the `interrogate reviewers` list from `~/.pi/agent/pstack-models.json` (or `.pi/pstack-models.json`) when present; `/skill:setup-pstack` writes it. One reviewer runs per entry, extending or shrinking the Reviewer A/B/C/D labels below to the configured entry count. Otherwise use the built-in defaults listed by `/pstack-models`.
+Launch all reviewers in a single message as parallel `subagent` calls. Read the `interrogate reviewers` list from `~/.pi/agent/pstack-models.json` (or `.pi/pstack-models.json`) when present; `/skill:setup-pstack` writes it. One reviewer runs per entry; label them Reviewer A, B, C, D, and so on up to the configured entry count. Otherwise call the `pstack_roles` tool for the effective map (the `/pstack-models` command shows the same map to the user) and use the built-in `interrogate reviewers` entries.
 
 For each reviewer:
 - `agent`: `worker`
-- `model`: the configured `interrogate reviewers` entry, or the built-in default
-- `role`: `interrogate reviewers` when you did not read an explicit list; the tool resolves the role's first entry
+- `model`: the configured `interrogate reviewers` entry, or the built-in default from `pstack_roles`
+- `role`: `interrogate reviewers` only as a fallback when no list is available; the tool then resolves the role's first entry, which runs one reviewer rather than the full panel
 - `readonly`: `true`
 
 If pi rejects a model id as unavailable when the subagent runs, run `pi --list-models`, pick the closest equivalent (prefer the highest-reasoning tier of the same family), spawn with that id, and update `~/.pi/agent/pstack-models.json` or re-run `/skill:setup-pstack`. Do not block the review on the model issue. If the configured value is `inherit-parent` or `auto`, omit `model` and let the subagent inherit the parent model. Never treat those aliases as broken model ids.

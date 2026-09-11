@@ -17,7 +17,7 @@ The aliases `inherit-parent` and `auto` are always valid even though they are no
 
 ### 2. Load current state
 
-Read `~/.pi/agent/pstack-models.json` if it exists and treat its values as the current choices. Otherwise start from these defaults, chosen from the pi catalog at port time:
+Read `~/.pi/agent/pstack-models.json` if it exists. Use its values for the roles it names and the built-in defaults below for any role it omits. If the file does not exist, start from these defaults, chosen from the pi catalog at port time:
 
 ```
 feature, refactoring: deepinfra/deepseek-ai/DeepSeek-V4-Flash-0731
@@ -43,7 +43,7 @@ interrogate reviewers: deepinfra/zai-org/GLM-5.3-Flash, deepinfra/google/gemini-
 
 Show every role with its current model, marking any model not in the detected set as needing a choice. Ask whether to accept as-is or change specific roles, offering the detected models plus `inherit-parent` and `auto` (both mean: this role runs on the parent session model, so omitting `--model`). Prefer `ask_question` over free text.
 
-For panel roles (arena runners, arena cross-judge pool, architect runners, interrogate reviewers) the value is a list, and one subagent runs per entry, so the list length sets the panel size. `arena cross-judge pool` is also a list, but Arena selects one value from it whose model family differs from the parent's when possible. `swarm workers` is the default model for every worker unless a race or comparison assigns another model per arm.
+For panel roles (arena runners, arena cross-judge pool, architect runners, interrogate reviewers) the value is a list, and one subagent runs per entry, alias entries included, so the list length sets the panel size. `arena cross-judge pool` is also a list, but Arena selects one value from it whose model family differs from the parent's when possible. `swarm workers` is the default model for every worker unless a race or comparison assigns another model per arm.
 
 ### 4. Validate
 
