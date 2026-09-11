@@ -1,0 +1,45 @@
+{
+  "name": "pi-pstack",
+  "version": "0.15.2",
+  "private": true,
+  "description": "pstack for pi. Rigorous agent workflows: poteto-mode, principles, playbooks, and role-routed subagents.",
+  "keywords": [
+    "pi-package",
+    "pstack",
+    "poteto-mode",
+    "workflow",
+    "principles",
+    "agent-style",
+    "subagents",
+    "unslop"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "pi": {
+    "extensions": [
+      "./extensions"
+    ],
+    "skills": [
+      "./skills"
+    ]
+  },
+  "scripts": {
+    "typecheck": "echo \"pi-pstack skeleton batch: no TypeScript sources yet; the full typecheck returns with extensions/ and skills/\"",
+    "test": "node --test 'skills/poteto-mode/scripts/**/*.test.ts' 'automations/**/*.test.ts'",
+    "check": "npm run typecheck && npm test"
+  },
+  "dependencies": {
+    "commander": "14.0.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-agent-core": "*",
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  }
+}
