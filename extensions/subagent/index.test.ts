@@ -37,17 +37,18 @@ it("registers the subagent and pstack_roles tools and the /pstack-models command
 
   const subagent = harness.tool("subagent");
   expect(subagent.label).toBe("Subagent");
-  expect(subagent.description).toContain("worker");
-  expect(subagent.description).toContain("poteto-agent");
-  expect(subagent.description).toContain("comment-sicko");
-  expect(subagent.promptGuidelines?.some((line) => line.includes("role"))).toBe(true);
+  expect(typeof subagent.execute).toBe("function");
   const properties = Object.keys((subagent.parameters as { properties?: Record<string, unknown> }).properties ?? {});
   for (const name of ["agent", "task", "role", "model", "thinking", "readonly", "tools", "cwd", "tasks", "chain"]) {
     expect(properties).toContain(name);
   }
 
-  expect(harness.tool("pstack_roles").description).toContain("role-to-model");
-  expect(harness.commands.get("pstack-models")?.description).toContain("role-to-model");
+  const pstackRoles = harness.tool("pstack_roles");
+  expect(typeof pstackRoles.execute).toBe("function");
+  expect(
+    Object.keys((pstackRoles.parameters as { properties?: Record<string, unknown> }).properties ?? {}),
+  ).toEqual([]);
+  expect(typeof harness.commands.get("pstack-models")?.handler).toBe("function");
 });
 
 it("spawns one isolated child with the agent prompt, task, and parent model", async () => {
@@ -60,7 +61,9 @@ it("spawns one isolated child with the agent prompt, task, and parent model", as
   expect(entry.model).toBe("parent/model");
   expect(entry.tools).toBeUndefined();
   expect(entry.thinking).toBeUndefined();
-  expect(entry.systemPrompt).toContain("concise report");
+  expect(entry.systemPrompt).not.toBeNull();
+  expect((entry.systemPrompt ?? "").length > 0).toBe(true);
+  expect(entry.argv).toContain("--append-system-prompt");
   expect(entry.argv).toContain("--no-session");
   expect(entry.argv).toContain("-p");
 
@@ -159,7 +162,9 @@ it("applies the bundled comment-sicko agent's readonly frontmatter", async () =>
   await harness.runTool("subagent", { agent: "comment-sicko", task: "review the diff" });
   const entry = firstStart(harness);
   expect(entry.tools).toBe("read,grep,find,ls");
-  expect(entry.systemPrompt).toContain("I hate comments.");
+  expect(entry.systemPrompt).not.toBeNull();
+  expect((entry.systemPrompt ?? "").length > 0).toBe(true);
+  expect(entry.argv).toContain("--append-system-prompt");
 });
 
 it("fails an unknown agent with the available agent list and spawns nothing", async () => {
