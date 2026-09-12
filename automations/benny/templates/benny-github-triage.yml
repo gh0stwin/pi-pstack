@@ -1,0 +1,63 @@
+# Benny triage for the GitHub intake. Copy to
+# .github/workflows/benny-github-triage.yml in the target repository and adjust
+# the label and the pi install step.
+#
+# Use this pair instead of benny-triage.yml / benny-reproduce.yml when the
+# configuration sets `intake.source: github`. No Slack CLI or token is needed.
+#
+# The intake label defaults to `tracker.labels.intake` ("triage"). A new or
+# reopened issue is triaged as it arrives; a labeled issue is triaged only when
+# it carries the intake label.
+name: benny-github-triage
+
+on:
+  issues:
+    types: [opened, reopened, labeled]
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: Issue number to triage
+        required: true
+
+concurrency:
+  group: benny-triage-${{ github.event.issue.number || inputs.issue }}
+  cancel-in-progress: false
+
+jobs:
+  triage:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.action != 'labeled' || contains(github.event.issue.labels.*.name, 'triage') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install pi
+        run: npm install -g --ignore-scripts @earendil-works/pi-coding-agent
+
+      - name: Install project packages
+        run: pi install -l git:github.com/gh0stwin/pi-pstack
+
+      - name: Triage the issue
+        env:
+          PI_PROVIDER_KEY: ${{ secrets.PI_PROVIDER_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ '${{ github.event_name }}' = 'workflow_dispatch' ]; then
+            number='${{ inputs.issue }}'
+            url="https://github.com/${{ github.repository }}/issues/$number"
+          else
+            number='${{ github.event.issue.number }}'
+            url='${{ github.event.issue.html_url }}'
+          fi
+          node .pi/automations/benny/runner/benny-run.ts \
+            --mode triage \
+            --config .pi/benny/configuration.yaml \
+            --event "{\"issue\":$number,\"url\":\"$url\"}"

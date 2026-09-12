@@ -23,11 +23,22 @@ Event:
 
 The event describes a new top-level report in the configured source Slack channel. `ts` is the report; `thread_ts` is present only when the report is already a reply.
 
-Treat the source channel and root thread timestamp as immutable. If either is missing or does not match configuration, stop without posting or writing to the issue tracker.
+Event, GitHub intake (`intake.source: github`):
+
+```json
+{
+	"issue": 123,
+	"url": "https://github.com/owner/repo/issues/123"
+}
+```
+
+The GitHub intake has no Slack CLI. Treat the issue named by the event as the source thread and post the single verdict as one comment on that issue through the configured tracker adapter. Do not call Slack or any Slack API.
+
+Treat the source coordinates as immutable. If they are missing or do not match configuration, stop without posting or writing to the issue tracker.
 
 The operational file owns classification, attachment review, cause tracing, routing, dedupe, tracker writes, and the final verdict. Post no progress messages. Never post a root message in the source channel.
 
-The coordinator is the only Slack poster. Any delegated subagent must run read-only (`readonly: true`), return findings only, and receive an explicit ban on every Slack write action.
+The coordinator is the only poster. Any delegated subagent must run read-only (`readonly: true`), return findings only, and receive an explicit ban on every Slack write action. The GitHub intake has no Slack poster at all.
 
 End the single verdict with exactly one configured marker:
 
