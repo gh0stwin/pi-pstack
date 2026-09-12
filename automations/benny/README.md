@@ -13,7 +13,7 @@ benny takes reports from one of two intakes, chosen in the configuration as `int
 | `slack` | a message in the configured source channel | one thread reply through the repository's slack CLI | yes |
 | `github` | a github issue, or a `benny-run.ts --event` invocation | one comment on the issue through the tracker adapter | no |
 
-slack is opt-in. a user who does not use slack sets `intake.source: github`, deletes the whole `slack:` section, and installs nothing slack-related. the runner infers the github path when `slack.cli` is absent and fails closed when neither intake is configured.
+slack is opt-in. a user who does not use slack sets `intake.source: github`, deletes the whole `slack:` section, and installs nothing slack-related. the runner infers the github path when the config has no slack section and fails closed when neither intake is configured (a slack section missing its cli or source channel still fails closed).
 
 ## how it runs on pi
 
