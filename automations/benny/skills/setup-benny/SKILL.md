@@ -7,7 +7,7 @@ description: Configure Benny and prepare its triage and reproduce runs on pi. Us
 
 The human enters setup by pointing pi at the pack's `FOR_AGENTS.md`, or by running `/skill:setup-benny` from a session rooted in the target repository. Either way this file is the checklist. The destination is `<target-repository>/.pi/automations/benny/`.
 
-Benny needs external configuration, a Slack CLI, and two headless pi runs. pi has no hosted automations, so the runs are GitHub Actions workflows (`templates/benny-triage.yml`, `templates/benny-reproduce.yml`) or the local runner (`runner/benny-run.mjs`). Both invoke `pi -p`.
+Benny needs external configuration, a Slack CLI, and two headless pi runs. pi has no hosted automations, so the runs are GitHub Actions workflows (`templates/benny-triage.yml`, `templates/benny-reproduce.yml`) or the local runner (`runner/benny-run.ts`). Both invoke `pi -p`.
 
 Do this before asking for Benny configuration.
 
@@ -102,12 +102,12 @@ Copy and fill [`../skills/reproduce-and-fix-issues/references/feature-map.exampl
 pi has no automation editor. Benny runs as headless jobs:
 
 1. Copy [`../templates/benny-triage.yml`](../templates/benny-triage.yml) and [`../templates/benny-reproduce.yml`](../templates/benny-reproduce.yml) to `.github/workflows/`.
-2. Add the repository secrets each workflow names (`PI_API_KEY` or the provider keys pi needs, plus `BENNY_SLACK_BOT_TOKEN` when the CLI uses it).
+2. Add the repository secrets each workflow names (`PI_PROVIDER_KEY` or the provider keys pi needs, plus `BENNY_SLACK_BOT_TOKEN` when the CLI uses it).
 3. Confirm the workflow checks out the repository at `repository.default_branch` and that the operational files are committed there.
-4. For a local run, use [`../runner/benny-run.mjs`](../runner/benny-run.mjs):
+4. For a local run, use [`../runner/benny-run.ts`](../runner/benny-run.ts):
 
 ```bash
-node .pi/automations/benny/runner/benny-run.mjs \
+node .pi/automations/benny/runner/benny-run.ts \
   --mode triage \
   --config .pi/benny/configuration.yaml \
   --event '{"channel":"C0123","ts":"1700000000.000100"}'

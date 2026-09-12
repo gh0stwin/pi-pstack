@@ -6,7 +6,8 @@ runs:
   reproduce_name: "benny-reproduce"
 
 # Benny has no built-in Slack integration. Point `cli` at the wrapper the
-# repository provides; it must implement the contract in README.md.
+# repository provides; it must implement the contract in
+# skills/setup-benny/SKILL.md.
 slack:
   cli: "benny-slack"
   source_channel_id: "SOURCE_CHANNEL_ID"
