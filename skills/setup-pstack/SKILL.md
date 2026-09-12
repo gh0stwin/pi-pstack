@@ -31,7 +31,7 @@ how explainer: deepinfra/zai-org/GLM-5.3-Flash
 why investigators: deepinfra/deepseek-ai/DeepSeek-V4-Flash-0731
 why synthesizer: deepinfra/zai-org/GLM-5.3-Flash
 reflect tooling: deepinfra/google/gemini-3.1-pro
-reflect judgment, divergent, synthesizer: deepinfra/zai-org/GLM-5.3-Flash
+reflect judgment, reflect divergent, reflect synthesizer: deepinfra/zai-org/GLM-5.3-Flash
 arena runners: deepinfra/zai-org/GLM-5.3-Flash, deepinfra/google/gemini-3.1-pro, deepinfra/deepseek-ai/DeepSeek-V4-Flash-0731, deepinfra/Qwen/Qwen3-235B-A22B-Thinking-2507
 arena cross-judge pool: deepinfra/zai-org/GLM-5.3-Flash, deepinfra/google/gemini-3.1-pro, deepinfra/deepseek-ai/DeepSeek-V4-Flash-0731, deepinfra/Qwen/Qwen3-235B-A22B-Thinking-2507
 swarm workers: deepinfra/deepseek-ai/DeepSeek-V4-Flash-0731

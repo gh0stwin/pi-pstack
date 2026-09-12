@@ -37,7 +37,7 @@ Run:
 
 It detects the models you have with `pi --list-models`, asks which one each pstack role should use, and writes `~/.pi/agent/pstack-models.json`. The `subagent` tool reads that file at every spawn, so a new choice applies to the next subagent without a restart.
 
-- Roles: `feature, refactoring`, `bug-fix`, `perf-issue`, `hillclimb`, `judgment and prose`, `hardest tasks`, `how explorer`, `how explainer`, `why investigators`, `why synthesizer`, `reflect tooling`, `reflect judgment, divergent, synthesizer`, `swarm workers`, plus the panel roles `arena runners`, `arena cross-judge pool`, `architect runners`, and `interrogate reviewers`.
+- Roles: `feature, refactoring`, `bug-fix`, `perf-issue`, `hillclimb`, `judgment and prose`, `hardest tasks`, `how explorer`, `how explainer`, `why investigators`, `why synthesizer`, `reflect tooling`, `reflect judgment, reflect divergent, reflect synthesizer`, `swarm workers`, plus the panel roles `arena runners`, `arena cross-judge pool`, `architect runners`, and `interrogate reviewers`.
 - `inherit-parent` and `auto` mean "omit `--model` and use the parent session model".
 - A project can add `.pi/pstack-models.json`; project keys override user keys for subagents spawned in that project.
 - Run `/pstack-models` or call the `pstack_roles` tool to see the effective map and which files supplied it.
