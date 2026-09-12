@@ -4,7 +4,7 @@ Rigorous agent workflows for pi: poteto-mode, 23 principles, 23 playbooks, role-
 
 This is a **port of the Cursor plugin [`pstack`](https://github.com/cursor/plugins/tree/main/pstack) v0.15.2** by Lauren Tan, adapted to run on pi. It is not the upstream project, and it is not affiliated with Cursor. Every change made during the port, every upstream file's disposition, and every capability that could not be carried over is recorded in [PORTING.md](./PORTING.md). Read that before trusting a workflow to behave exactly as the upstream documentation describes.
 
-> **Port status.** The port is landing in reviewable batches. Batch 1 landed the package skeleton and documentation; a later batch landed `poteto-mode` and the writing skills (`deslop`, `no-comments`, `technical-writing`, `unslop`); the next landed the investigation cluster (`how`, `why`, `reflect`, `automate-me`, `recall`, `show-me-your-work`, `teach`). This batch lands the verification and review cluster: `setup-pstack`, `create-verification-skill`, `maintain-verification-skill`, `architect`, `arena`, and `interrogate`. `extensions/`, `agents/`, and `automations/` are not in the tree yet, so an install at this revision contributes those skills but no extension or agents, and links from this README and `docs/guide/` into the not-yet-landed directories still do not resolve. The sections below describe the completed package; the remaining content batches follow.
+> **Port status.** The port is landing in reviewable batches. Batch 1 landed the package skeleton and documentation; a later batch landed `poteto-mode` and the writing skills (`deslop`, `no-comments`, `technical-writing`, `unslop`); the next landed the investigation cluster (`how`, `why`, `reflect`, `automate-me`, `recall`, `show-me-your-work`, `teach`); the next landed the verification and review cluster (`setup-pstack`, `create-verification-skill`, `maintain-verification-skill`, `architect`, `arena`, `interrogate`). This batch lands the `subagent` extension, the three agent definitions, and the Benny automations, so an install at this revision now supplies the extension, the agents, and both Benny runs alongside the landed skills. The sections below describe the completed package; the remaining skill batches follow.
 
 ## Install
 
@@ -93,10 +93,10 @@ subagent { chain: [{ agent: "how", task: "..." }, { agent: "worker", task: "... 
 
 ```bash
 npm install
-npm run check     # runs the ported skills' tests; root typecheck is a placeholder until extensions/ land
+npm run check     # typechecks `extensions/` and the poteto-mode scripts tree, then runs the tests
 ```
 
-The ported `poteto-mode` scripts under `skills/poteto-mode/scripts/` are typechecked (`npm run typecheck`) and tested (`npm test`) from that directory, and `npm run check` runs those tests through `node --test`. The root `typecheck` script is still a placeholder until `extensions/` lands; it becomes the full check again — `extensions/` and all skills scripts typechecked — once that directory exists.
+`npm run typecheck` covers both tsconfigs, and `npm test` runs the `skills/poteto-mode/scripts/` tests plus the Benny runner tests (`automations/benny/runner/`) through `node --test`.
 
 ## License
 

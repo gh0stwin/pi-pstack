@@ -1,0 +1,74 @@
+# Benny reproduce-and-fix. Copy to .github/workflows/benny-reproduce.yml in the
+# target repository and adjust the secrets and the pi install step.
+#
+# The upstream automation waited inside one long-lived run for the trusted
+# triage marker. A headless job cannot wait for an unbounded time, so this
+# workflow polls: the schedule sweeps the source channel for a report that
+# carries a trusted marker and has no repro reply yet, and the dispatch path
+# runs one report immediately.
+#
+# Keep `draft_only: true` in the configuration. This workflow never merges.
+name: benny-reproduce
+
+on:
+  repository_dispatch:
+    types: [benny-report]
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Source Slack channel id
+        required: true
+      ts:
+        description: Source message ts (thread root or report)
+        required: true
+
+concurrency:
+  group: benny-reproduce
+  cancel-in-progress: false
+
+jobs:
+  reproduce:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install pi
+        run: npm install -g --ignore-scripts @earendil-works/pi-coding-agent
+
+      - name: Install project packages
+        run: pi install -l git:github.com/gh0stwin/pi-pstack
+
+      - name: Reproduce and fix
+        env:
+          PI_PROVIDER_KEY: ${{ secrets.PI_PROVIDER_KEY }}
+          BENNY_SLACK_BOT_TOKEN: ${{ secrets.BENNY_SLACK_BOT_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          event='${{ toJSON(github.event.client_payload) }}'
+          if [ "$event" = '{}' ] || [ -z "$event" ]; then
+            if [ '${{ github.event_name }}' = 'workflow_dispatch' ]; then
+              event=$(printf '{"channel":"%s","ts":"%s"}' '${{ inputs.channel }}' '${{ inputs.ts }}')
+            else
+              # Scheduled sweep: let the skill pick the first report whose
+              # trusted triage marker has no repro reply yet.
+              event='{"sweep":true}'
+            fi
+          fi
+          node .pi/automations/benny/runner/benny-run.ts \
+            --mode reproduce \
+            --config .pi/benny/configuration.yaml \
+            --event "$event"

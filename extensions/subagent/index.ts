@@ -1,0 +1,505 @@
+/**
+ * pstack subagent extension for pi.
+ *
+ * pi intentionally ships without a subagent primitive, so this extension
+ * supplies the one the pstack skills rely on. It spawns a separate `pi`
+ * process per task with an isolated context window, an agent definition from
+ * `agents/`, and a model resolved from the pstack role configuration.
+ *
+ * Modes:
+ *   - single:   { agent, task }
+ *   - parallel: { tasks: [{ agent, task }, ...] }   (max 8 tasks, 4 at a time)
+ *   - chain:    { chain: [{ agent, task: "... {previous} ..." }, ...] }
+ *
+ * Model resolution order: `model` parameter, then `role` parameter against
+ * `pstack-models.json`, then the agent definition's `model`, then the parent
+ * session model. `inherit-parent` and `auto` role values select that parent
+ * model and pass it to the child explicitly.
+ */
+
+import { spawn } from "node:child_process";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { Message } from "@earendil-works/pi-ai";
+import { StringEnum } from "@earendil-works/pi-ai";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
+import { type AgentConfig, discoverAgents } from "./agents.ts";
+import {
+  DEFAULT_ROLES,
+  INHERIT_VALUES,
+  loadRoleConfig,
+  type RoleConfig,
+  resolveRoleModel,
+} from "./config.ts";
+
+const MAX_PARALLEL_TASKS = 8;
+const MAX_CONCURRENCY = 4;
+const PER_TASK_OUTPUT_CAP = 50 * 1024;
+
+const READONLY_TOOLS = "read,grep,find,ls";
+
+type ThinkingName = ThinkingLevel;
+
+interface UsageStats {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  cost: number;
+  contextTokens: number;
+  turns: number;
+}
+
+function emptyUsage(): UsageStats {
+  return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 };
+}
+
+export interface SpawnRequest {
+  readonly agent: string;
+  readonly task: string;
+  readonly role?: string;
+  readonly model?: string;
+  readonly thinking?: ThinkingName;
+  readonly readonly?: boolean;
+  readonly tools?: string;
+  readonly cwd?: string;
+}
+
+interface SingleResult {
+  agent: string;
+  agentSource: AgentConfig["source"] | "unknown";
+  task: string;
+  model?: string;
+  exitCode: number;
+  output: string;
+  stderr: string;
+  usage: UsageStats;
+  stopReason?: string;
+  errorMessage?: string;
+}
+
+interface SubagentDetails {
+  mode: "single" | "parallel" | "chain";
+  results: SingleResult[];
+}
+
+function getPiInvocation(args: string[]): { command: string; args: string[] } {
+  const currentScript = process.argv[1];
+  if (currentScript && fs.existsSync(currentScript)) {
+    return { command: process.execPath, args: [currentScript, ...args] };
+  }
+  const execName = path.basename(process.execPath).toLowerCase();
+  if (!/^(node|bun)(\.exe)?$/.test(execName)) {
+    return { command: process.execPath, args };
+  }
+  return { command: "pi", args };
+}
+
+function formatTokens(count: number): string {
+  if (count < 1000) return count.toString();
+  if (count < 1_000_000) return `${Math.round(count / 1000)}k`;
+  return `${(count / 1_000_000).toFixed(1)}M`;
+}
+
+function formatUsage(usage: UsageStats, model: string | undefined): string {
+  const parts: string[] = [];
+  if (usage.turns) parts.push(`${usage.turns} turn${usage.turns > 1 ? "s" : ""}`);
+  if (usage.input) parts.push(`↑${formatTokens(usage.input)}`);
+  if (usage.output) parts.push(`↓${formatTokens(usage.output)}`);
+  if (usage.cost) parts.push(`$${usage.cost.toFixed(4)}`);
+  if (usage.contextTokens > 0) parts.push(`ctx:${formatTokens(usage.contextTokens)}`);
+  if (model) parts.push(model);
+  return parts.join(" ");
+}
+
+function isFailed(result: SingleResult): boolean {
+  return result.exitCode !== 0 || result.stopReason === "error" || result.stopReason === "aborted";
+}
+
+function capOutput(output: string): string {
+  const bytes = Buffer.byteLength(output, "utf8");
+  if (bytes <= PER_TASK_OUTPUT_CAP) return output;
+  let truncated = output.slice(0, PER_TASK_OUTPUT_CAP);
+  while (Buffer.byteLength(truncated, "utf8") > PER_TASK_OUTPUT_CAP) truncated = truncated.slice(0, -1);
+  return `${truncated}\n\n[Output truncated: ${bytes - Buffer.byteLength(truncated, "utf8")} bytes omitted. Full output preserved in tool details.]`;
+}
+
+async function writePromptFile(agentName: string, prompt: string): Promise<{ dir: string; file: string }> {
+  const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "pi-pstack-subagent-"));
+  const file = path.join(dir, `prompt-${agentName.replace(/[^\w.-]+/g, "_")}.md`);
+  await fs.promises.writeFile(file, prompt, { encoding: "utf8", mode: 0o600 });
+  return { dir, file };
+}
+
+interface ResolvedModel {
+  readonly model?: string;
+  readonly inheritsParent: boolean;
+}
+
+function resolveModel(request: SpawnRequest, agent: AgentConfig, roles: RoleConfig): ResolvedModel {
+  const explicit = request.model ?? (request.role !== undefined ? resolveRoleModel(roles, request.role) : undefined);
+  const chosen = explicit ?? agent.model;
+  if (chosen === undefined || INHERIT_VALUES.has(chosen)) return { inheritsParent: true };
+  return { model: chosen, inheritsParent: false };
+}
+
+interface RunContext {
+  readonly agents: readonly AgentConfig[];
+  readonly roles: RoleConfig;
+  readonly defaultCwd: string;
+  readonly parentModel?: string;
+  readonly parentThinking?: ThinkingName;
+  readonly signal?: AbortSignal;
+}
+
+async function runSingle(
+  context: RunContext,
+  request: SpawnRequest,
+  onUpdate?: (result: SingleResult) => void,
+): Promise<SingleResult> {
+  const agent = context.agents.find((candidate) => candidate.name === request.agent);
+  const base: SingleResult = {
+    agent: request.agent,
+    agentSource: agent?.source ?? "unknown",
+    task: request.task,
+    exitCode: 1,
+    output: "",
+    stderr: "",
+    usage: emptyUsage(),
+  };
+  if (agent === undefined) {
+    const available = context.agents.map((candidate) => candidate.name).join(", ") || "none";
+    base.stderr = `Unknown agent: "${request.agent}". Available agents: ${available}.`;
+    return base;
+  }
+
+  const resolved = resolveModel(request, agent, context.roles);
+  const model = resolved.model ?? context.parentModel;
+  const thinking = request.thinking ?? (resolved.inheritsParent ? context.parentThinking : undefined);
+  const tools = request.readonly === true ? READONLY_TOOLS : (request.tools ?? agent.tools?.join(","));
+
+  const args = ["--mode", "json", "-p", "--no-session"];
+  if (model !== undefined) args.push("--model", model);
+  if (thinking !== undefined) args.push("--thinking", thinking);
+  if (tools !== undefined && tools.length > 0) args.push("--tools", tools);
+
+  let promptDir: string | null = null;
+  if (agent.systemPrompt.trim().length > 0) {
+    const promptFile = await writePromptFile(agent.name, agent.systemPrompt);
+    promptDir = promptFile.dir;
+    args.push("--append-system-prompt", promptFile.file);
+  }
+  args.push(`Task: ${request.task}`);
+
+  const current: SingleResult = { ...base, model };
+  const emit = () => onUpdate?.({ ...current });
+
+  try {
+    const exitCode = await new Promise<number>((resolve) => {
+      const invocation = getPiInvocation(args);
+      const child = spawn(invocation.command, invocation.args, {
+        cwd: request.cwd ?? context.defaultCwd,
+        shell: false,
+        stdio: ["ignore", "pipe", "pipe"],
+        signal: context.signal,
+      });
+      let buffer = "";
+      let settled = false;
+      const settle = (code: number) => {
+        if (settled) return;
+        settled = true;
+        resolve(code);
+      };
+
+      const processLine = (line: string) => {
+        if (line.trim().length === 0) return;
+        let event: unknown;
+        try {
+          event = JSON.parse(line);
+        } catch {
+          return;
+        }
+        const record = event as { type?: string; message?: Message };
+        if (record.type === "message_end" && record.message !== undefined) {
+          const message = record.message;
+          if (message.role === "assistant") {
+            current.usage.turns += 1;
+            const usage = message.usage;
+            if (usage) {
+              current.usage.input += usage.input || 0;
+              current.usage.output += usage.output || 0;
+              current.usage.cacheRead += usage.cacheRead || 0;
+              current.usage.cacheWrite += usage.cacheWrite || 0;
+              current.usage.cost += usage.cost?.total || 0;
+              current.usage.contextTokens = usage.totalTokens || 0;
+            }
+            for (const part of message.content) {
+              if (part.type === "text") current.output = part.text;
+            }
+            if (message.model) current.model = message.model;
+            if (message.stopReason) current.stopReason = message.stopReason;
+            if (message.errorMessage) current.errorMessage = message.errorMessage;
+            emit();
+          }
+        }
+      };
+
+      child.stdout.on("data", (data: Buffer) => {
+        buffer += data.toString();
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) processLine(line);
+      });
+      child.stderr.on("data", (data: Buffer) => {
+        current.stderr += data.toString();
+      });
+      child.on("error", (error) => {
+        current.stderr += `${error.message}\n`;
+        settle(1);
+      });
+      child.on("close", (code) => {
+        if (buffer.trim().length > 0) processLine(buffer);
+        settle(code ?? 1);
+      });
+    });
+    current.exitCode = exitCode;
+    return current;
+  } finally {
+    if (promptDir !== null) {
+      await fs.promises.rm(promptDir, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+}
+
+async function mapWithConcurrency<TIn, TOut>(
+  items: readonly TIn[],
+  concurrency: number,
+  fn: (item: TIn, index: number) => Promise<TOut>,
+): Promise<TOut[]> {
+  const results: TOut[] = new Array(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    for (;;) {
+      const index = next++;
+      if (index >= items.length) return;
+      results[index] = await fn(items[index], index);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+function describeResult(result: SingleResult): string {
+  const label = result.model ? `${result.agent} (${result.model})` : result.agent;
+  const usage = formatUsage(result.usage, undefined);
+  if (isFailed(result)) {
+    const reason = result.errorMessage ?? result.stderr.trim() ?? result.output.trim() ?? "(no output)";
+    return `✗ ${label} failed: ${reason}`;
+  }
+  return `✓ ${label}${usage ? ` ${usage}` : ""}\n${capOutput(result.output.trim() || "(no output)")}`;
+}
+
+const SpawnItem = Type.Object({
+  agent: Type.String({ description: "Agent definition name, for example worker, poteto-agent, or comment-sicko" }),
+  task: Type.String({ description: "Task prompt for the subagent" }),
+  role: Type.Optional(Type.String({ description: "pstack role label used to resolve the model, for example bug-fix" })),
+  model: Type.Optional(Type.String({ description: "Explicit pi model id, for example provider/model" })),
+  thinking: Type.Optional(StringEnum(["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const)),
+  readonly: Type.Optional(Type.Boolean({ description: "Run with read, grep, find, and ls only" })),
+  tools: Type.Optional(Type.String({ description: "Comma-separated tool allowlist" })),
+  cwd: Type.Optional(Type.String({ description: "Working directory for the subagent" })),
+});
+
+const SubagentParams = Type.Object({
+  agent: Type.Optional(Type.String({ description: "Agent definition name for a single task" })),
+  task: Type.Optional(Type.String({ description: "Task prompt for a single subagent" })),
+  role: Type.Optional(Type.String({ description: "pstack role label used to resolve the model" })),
+  model: Type.Optional(Type.String({ description: "Explicit pi model id" })),
+  thinking: Type.Optional(StringEnum(["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const)),
+  readonly: Type.Optional(Type.Boolean({ description: "Run with read, grep, find, and ls only" })),
+  tools: Type.Optional(Type.String({ description: "Comma-separated tool allowlist" })),
+  cwd: Type.Optional(Type.String({ description: "Working directory for the subagent" })),
+  tasks: Type.Optional(Type.Array(SpawnItem, { description: "Parallel tasks; each runs in its own subagent" })),
+  chain: Type.Optional(
+    Type.Array(SpawnItem, { description: "Sequential tasks; use {previous} in a task to inject the prior output" }),
+  ),
+});
+
+function toRequest(item: {
+  agent: string;
+  task: string;
+  role?: string;
+  model?: string;
+  thinking?: ThinkingName;
+  readonly?: boolean;
+  tools?: string;
+  cwd?: string;
+}): SpawnRequest {
+  return {
+    agent: item.agent,
+    task: item.task,
+    role: item.role,
+    model: item.model,
+    thinking: item.thinking,
+    readonly: item.readonly,
+    tools: item.tools,
+    cwd: item.cwd,
+  };
+}
+
+function roleSummary(roles: RoleConfig, sources: readonly string[]): string {
+  const lines = Object.entries(roles).map(([role, value]) => {
+    const rendered = typeof value === "string" ? value : value.join(", ");
+    return `${role}: ${rendered}`;
+  });
+  const header =
+    sources.length > 0
+      ? `pstack model roles (config: ${sources.join(", ")}; defaults fill the rest)`
+      : "pstack model roles (built-in defaults; run /skill:setup-pstack to configure)";
+  return `${header}\n${lines.join("\n")}`;
+}
+
+export default function pstackSubagent(pi: ExtensionAPI) {
+  pi.registerTool({
+    name: "subagent",
+    label: "Subagent",
+    description:
+      "Delegate a task to an isolated subagent process with its own context window. Supports single, parallel, and chained modes, pstack role-based model routing, and agent definitions from the pi-pstack package (worker, poteto-agent, comment-sicko).",
+    promptSnippet: "Delegate tasks to isolated subagents (single, parallel, or chain) with role-routed models",
+    promptGuidelines: [
+      "Use subagent to delegate work that should run in an isolated context window, and spawn parallel subagent calls in one message to fan out.",
+      "Use subagent with the role parameter (for example role: \"bug-fix\") so the model follows the pstack role configuration written by /skill:setup-pstack.",
+      "Use subagent with agent: \"poteto-agent\" for pstack-style code delegates and agent: \"comment-sicko\" for read-only comment review.",
+    ],
+    parameters: SubagentParams,
+    async execute(_toolCallId, params, signal, onUpdate, ctx: ExtensionContext) {
+      const { roles } = loadRoleConfig(ctx.cwd, ctx.isProjectTrusted());
+      const agents = discoverAgents(ctx.cwd, { projectTrusted: ctx.isProjectTrusted() });
+      const parentModel = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
+      const context: RunContext = {
+        agents,
+        roles,
+        defaultCwd: ctx.cwd,
+        parentModel,
+        parentThinking: ctx.thinkingLevel,
+        signal,
+      };
+
+      const makeDetails = (mode: SubagentDetails["mode"], results: SingleResult[]): SubagentDetails => ({
+        mode,
+        results,
+      });
+
+      const emitProgress = (mode: SubagentDetails["mode"], results: SingleResult[]) => {
+        onUpdate?.({
+          content: [{ type: "text", text: results.map(describeResult).join("\n\n") || "(running...)" }],
+          details: makeDetails(mode, results),
+        });
+      };
+
+      if (params.chain !== undefined && params.chain.length > 0) {
+        const results: SingleResult[] = [];
+        let previous = "";
+        for (const item of params.chain) {
+          const task = item.task.replaceAll("{previous}", previous);
+          const result = await runSingle(context, toRequest({ ...item, task }), () =>
+            emitProgress("chain", results),
+          );
+          results.push(result);
+          emitProgress("chain", results);
+          if (isFailed(result)) break;
+          previous = result.output;
+        }
+        const content = results.map((result, index) => `Step ${index + 1}\n${describeResult(result)}`).join("\n\n");
+        return {
+          content: [{ type: "text", text: content || "(no output)" }],
+          details: makeDetails("chain", results),
+          isError: results.some(isFailed),
+        };
+      }
+
+      if (params.tasks !== undefined && params.tasks.length > 0) {
+        if (params.tasks.length > MAX_PARALLEL_TASKS) {
+          return {
+            content: [{ type: "text", text: `Too many parallel tasks: ${params.tasks.length} (max ${MAX_PARALLEL_TASKS}).` }],
+            details: makeDetails("parallel", []),
+            isError: true,
+          };
+        }
+        const settled: SingleResult[] = new Array(params.tasks.length);
+        const results = await mapWithConcurrency(params.tasks, MAX_CONCURRENCY, async (item, index) => {
+          const result = await runSingle(context, toRequest(item), () => emitProgress("parallel", settled));
+          settled[index] = result;
+          emitProgress("parallel", settled.filter(Boolean));
+          return result;
+        });
+        const content = results.map((result, index) => `Task ${index + 1}\n${describeResult(result)}`).join("\n\n");
+        return {
+          content: [{ type: "text", text: content || "(no output)" }],
+          details: makeDetails("parallel", results),
+          isError: results.some(isFailed),
+        };
+      }
+
+      if (params.agent === undefined || params.task === undefined) {
+        const available = agents.map((agent) => `${agent.name} (${agent.source})`).join(", ") || "none";
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Provide agent and task, or tasks, or chain. Available agents: ${available}.`,
+            },
+          ],
+          details: makeDetails("single", []),
+          isError: true,
+        };
+      }
+
+      const result = await runSingle(
+        context,
+        toRequest({
+          agent: params.agent,
+          task: params.task,
+          role: params.role,
+          model: params.model,
+          thinking: params.thinking,
+          readonly: params.readonly,
+          tools: params.tools,
+          cwd: params.cwd,
+        }),
+      );
+      return {
+        content: [{ type: "text", text: describeResult(result) }],
+        details: makeDetails("single", [result]),
+        isError: isFailed(result),
+      };
+    },
+  });
+
+  pi.registerTool({
+    name: "pstack_roles",
+    label: "pstack Roles",
+    description:
+      "Return the effective pstack role-to-model map used by the subagent tool, including config file sources and built-in defaults.",
+    promptSnippet: "Show the effective pstack role-to-model configuration",
+    parameters: Type.Object({}),
+    async execute(_toolCallId, _params, _signal, _onUpdate, ctx: ExtensionContext) {
+      const { roles, sources } = loadRoleConfig(ctx.cwd, ctx.isProjectTrusted());
+      return {
+        content: [{ type: "text", text: roleSummary(roles, sources) }],
+        details: { roles, sources, defaults: DEFAULT_ROLES },
+      };
+    },
+  });
+
+  pi.registerCommand("pstack-models", {
+    description: "Show the effective pstack role-to-model configuration",
+    handler: async (_args, ctx) => {
+      const { roles, sources } = loadRoleConfig(ctx.cwd, ctx.isProjectTrusted());
+      ctx.ui.notify(roleSummary(roles, sources), "info");
+    },
+  });
+}
