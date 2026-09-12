@@ -37,7 +37,7 @@ So the port is mostly a re-homing exercise: keep the operational content (the wo
 | `/setup-pstack`, `/poteto-mode` slash commands | `/skill:setup-pstack`, `/skill:poteto-mode` skill commands | `skills/setup-pstack/`, `skills/poteto-mode/` |
 | `~/.cursor/rules/pstack-models.mdc` always-applied rule | `~/.pi/agent/pstack-models.json`, read by the extension at spawn time | `skills/setup-pstack/`, `extensions/subagent/config.ts` |
 | Cursor model slugs (`grok-4.6-fast-xhigh`, `claude-fable-5-1-thinking-max`, `gpt-5.6-sol-max`, `claude-opus-5-thinking-xhigh`) | pi model ids from `pi --list-models` (`provider/model`) | `extensions/subagent/config.ts`, `skills/setup-pstack/SKILL.md` |
-| `AskQuestion` | `ask_question` | adapted in the affected skills |
+| `AskQuestion` | `ask_user_question`, registered by the `@juicesharp/rpiv-ask-user-question` extension package | `package.json` dependency and `pi` manifest; `skills/poteto-mode/SKILL.md`, `skills/setup-pstack/SKILL.md` |
 | `/loop` (built-in wake mechanism) | explicit wake signals: a watcher subagent, `scripts/watch-pr/watch-pr`, a shell heartbeat, or a scheduled `pi -p` run | `skills/poteto-mode/playbooks/autonomous-run.md`, `docs/guide/07-overnight.md` |
 | `/deslop` (from the separate `cursor-team-kit` plugin) | a new `deslop` skill in this package | `skills/deslop/` |
 | Cursor's built-in `create-skill` | a new `create-skill` skill in this package, written against pi's Agent Skills rules | `skills/create-skill/` |
@@ -215,7 +215,7 @@ These are the things the port could not carry over, each with the concrete reaso
 | `skills/poteto-mode/playbooks/visual-parity.md` | adapted | `skills/poteto-mode/playbooks/visual-parity.md` | Ported for pi: frontmatter made spec-compliant, Cursor primitives replaced, skill references rewritten to `/skill:` commands. |
 | `skills/poteto-mode/playbooks/worktree-cleanup.md` | adapted | `skills/poteto-mode/playbooks/worktree-cleanup.md` | Ported for pi: frontmatter made spec-compliant, Cursor primitives replaced, skill references rewritten to `/skill:` commands. |
 | `skills/poteto-mode/references/bugbot-triage.md` | adapted | `skills/poteto-mode/references/review-bot-triage.md` | Renamed and generalized from one vendor's review bot to review bots in general. |
-| `skills/poteto-mode/scripts/bootstrap.ts` | adapted | `skills/poteto-mode/scripts/bootstrap.ts` | `Bun.spawnSync` and `import.meta.dir` replaced by Node equivalents; installs at the package root with npm. |
+| `skills/poteto-mode/scripts/bootstrap.ts` | dropped | `(none)` | Upstream's first-run installer for `commander`, removed after the port. pi runs `npm install` at the package root for npm and git installs, and clone users run it there. |
 | `skills/poteto-mode/scripts/bun.lock` | dropped | `(none)` | Bun lockfile. The scripts now install and run under npm and Node. |
 | `skills/poteto-mode/scripts/check-plan.mjs` | adapted | `skills/poteto-mode/scripts/check-plan.mjs` | The plan linter's lane example no longer names a vendor model. |
 | `skills/poteto-mode/scripts/orch/orch.test.ts` | adapted | `skills/poteto-mode/scripts/orch/orch.test.ts` | `bun:test` and `Bun.spawn*` replaced by the Node test runner and `node:child_process`. |
@@ -351,7 +351,7 @@ Ordered by area. Each entry is a change the captain can disagree with.
 
 1. **`package.json` replaces `.cursor-plugin/plugin.json`.** Name `pi-pstack`, version `0.15.2` (tracks upstream), `private: true`, `type: module`, `license: MIT`, keyword `pi-package`, and a `pi` manifest declaring `extensions/` and `skills/`. The upstream `displayName`, `category`, `tags`, `logo`, `homepage`, and `repository` fields have no pi manifest equivalent; the repository and homepage are in `README.md` instead. The `prompts` manifest entry was removed because the package ships no prompt templates: both upstream slash commands are now skills.
 2. **Install path changed.** Upstream: install the plugin from Cursor's marketplace. Here: `pi install git:github.com/gh0stwin/pi-pstack`. `pi install -l` is the project-scoped form Benny uses.
-3. **`dependencies` gained `commander@14.0.0`** for the ported `watch-pr` and `orch` CLIs. It is declared at the package root because pi runs `npm install` there and Node resolves upward from the importing file. `peerDependencies` lists pi's bundled packages (`@earendil-works/pi-*`, `typebox`) with `"*"`, per the package docs.
+3. **`dependencies` gained `commander@14.0.0`** for the ported `watch-pr` and `orch` CLIs. It is declared at the package root because pi runs `npm install` there and Node resolves upward from the importing file. `dependencies` also carries `@juicesharp/rpiv-ask-user-question@2.9.0`, bundled and loaded through the `pi` manifest, for the `ask_user_question` tool that replaces Cursor's `AskQuestion`. `peerDependencies` lists pi's bundled packages (`@earendil-works/pi-*`, `typebox`) with `"*"`, per the package docs.
 4. **Build, test, and lint setup added.** `npm run typecheck` typechecks `extensions/` and the scripts tree; `npm test` runs all 58 tests through `node --test`; `npm run check` runs both. Upstream had no package-level check.
 
 ### Skills
@@ -367,7 +367,7 @@ Ordered by area. Each entry is a change the captain can disagree with.
 13. **`skills/automate-me/SKILL.md` transcript discovery rewritten** for pi sessions: `$PI_SESSION_FILE` for the active session and `<agent dir>/sessions/--<workspace-slug>--/*.jsonl` for history, with the agent-dir override respected.
 14. **`skills/reflect/SKILL.md` and its reviewers** now hand skill creation to the ported `create-skill` skill and describe sessions rather than Cursor transcripts.
 15. **`skills/poteto-mode/references/bugbot-triage.md` → `review-bot-triage.md`.** Renamed and rewritten so the guidance is about review bots in general, not one vendor's bot.
-16. **`skills/poteto-mode/SKILL.md` updated**: `AskQuestion` → `ask_question`, `Task`/`subagent_type` → the `subagent` tool's `agent`/`role`/`readonly` parameters, model slugs → roles, `/loop` → explicit wake signals, Bugbot → review bots, and the `control-cli`/`control-ui` route → a project verification skill. The `mode`, `icon`, `color`, and `reminder` frontmatter fields were dropped.
+16. **`skills/poteto-mode/SKILL.md` updated**: `AskQuestion` → the `ask_user_question` tool from `@juicesharp/rpiv-ask-user-question`, `Task`/`subagent_type` → the `subagent` tool's `agent`/`role`/`readonly` parameters, model slugs → roles, `/loop` → explicit wake signals, Bugbot → review bots, and the `control-cli`/`control-ui` route → a project verification skill. The `mode`, `icon`, `color`, and `reminder` frontmatter fields were dropped.
 17. **`skills/poteto-mode/playbooks/*` (23 playbooks) adapted.** `deslop`, `no-comments`, and the other skill routes use `/skill:` forms; `run_in_background` is gone; autonomous runs name a wake signal instead of `/loop`; PR-status requests no longer disambiguate against a Cursor built-in.
 
 ### Agents and the subagent extension
@@ -382,7 +382,7 @@ Ordered by area. Each entry is a change the captain can disagree with.
 
 23. **`watch-pr` ported to Node.** `#!/usr/bin/env node`; `bun:test` replaced by `node:test` plus the new `expect` shim; all 38 tests kept and passing.
 24. **`orch` ported to Node.** `Bun.spawnSync` → `node:child_process.spawnSync`, `Bun.spawn` → `spawn` + `once(child, "exit")`, `import.meta.dir` → `import.meta.dirname`, and one TypeScript parameter property in `store.ts` rewritten because Node's strip-only loader rejects it. All 14 tests kept and passing.
-25. **`bootstrap.ts` rewritten.** It now installs at the package root with `npm install` instead of `bun install --frozen-lockfile` in `scripts/`, keys its install stamp on the root `package.json` and `package-lock.json`, and re-execs with `node`. `bun.lock` is gone.
+25. **`bootstrap.ts` removed.** Upstream installed its runtime dependency on first use. pi runs `npm install` at the package root for npm and git installs, and a clone user runs it there, so the fallback and its install stamp are gone. `bun.lock` is gone too.
 26. **`worktree-audit.sh` ported to pi sessions.** It resolves the session directory from `PI_CODING_AGENT_SESSION_DIR` / `PI_CODING_AGENT_DIR`, searches both the repository-level session directory and each worktree's own directory (pi keys sessions by the session's cwd), handles GNU and BSD `stat`/`date`, and renames the `LAST_CHAT` column to `LAST_SESSION` and the `verify-recent-chat` bucket to `verify-recent-session`.
 27. **Review-bot detection generalized.** `isBugbot`/`bugbotReviewPasses` became `isReviewBot`/`reviewBotPasses` across `github.ts`, `types.ts`, `render.ts`, `policy.ts`, and the tests. The detector now matches a list of known review-bot logins plus generic run markers. Cursor's Bugbot is not in the list: a repository that runs it must add its login to `REVIEW_BOT_LOGINS`.
 28. **`check-plan.mjs` no longer names a vendor model** in its lane example, and its loop variable was renamed.
@@ -455,7 +455,7 @@ The 3 `automations/benny/skills/*/SKILL.md` files are deliberately outside the p
 
 ### Extensions register
 
-`extensions/subagent/index.ts` registers the `subagent` tool, the `pstack_roles` tool, and the `/pstack-models` command. Loaded with `pi -e <path>` in an isolated config directory to confirm registration without installing; typechecked by `npm run typecheck`.
+`extensions/subagent/index.ts` registers the `subagent` tool, the `pstack_roles` tool, and the `/pstack-models` command. Loaded with `pi -e <path>` in an isolated config directory to confirm registration without installing; typechecked by `npm run typecheck`. The `pi` manifest also loads `node_modules/@juicesharp/rpiv-ask-user-question/index.ts`, which registers `ask_user_question`; confirmed by installing the package into an isolated `PI_CODING_AGENT_DIR` and listing the session tools through pi's loader.
 
 ### Scripts
 

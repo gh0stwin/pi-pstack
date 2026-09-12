@@ -41,7 +41,7 @@ interrogate reviewers: deepinfra/zai-org/GLM-5.3-Flash, deepinfra/google/gemini-
 
 ### 3. Map and confirm
 
-Show every role with its current model, marking any model not in the detected set as needing a choice. Ask whether to accept as-is or change specific roles, offering the detected models plus `inherit-parent` and `auto` (both mean: this role runs on the parent session model, so omitting `--model`). Prefer `ask_question` over free text.
+Show every role with its current model, marking any model not in the detected set as needing a choice. Ask whether to accept as-is or change specific roles, offering the detected models plus `inherit-parent` and `auto` (both mean: this role runs on the parent session model, so omitting `--model`). Prefer the `ask_user_question` tool (from `@juicesharp/rpiv-ask-user-question`) over free text.
 
 For panel roles (arena runners, arena cross-judge pool, architect runners, interrogate reviewers) the value is a list, and one subagent runs per entry, alias entries included, so the list length sets the panel size. `arena cross-judge pool` is also a list, but Arena selects one value from it whose model family differs from the parent's when possible. `swarm workers` is the default model for every worker unless a race or comparison assigns another model per arm.
 
