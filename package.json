@@ -24,7 +24,7 @@
     ]
   },
   "scripts": {
-    "typecheck": "echo \"pi-pstack skeleton batch: no TypeScript sources yet; the full typecheck returns with extensions/ and skills/\"",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p skills/poteto-mode/scripts/tsconfig.json",
     "test": "node --test 'skills/poteto-mode/scripts/**/*.test.ts' 'automations/**/*.test.ts'",
     "check": "npm run typecheck && npm test"
   },
