@@ -13,7 +13,8 @@
  *
  * Model resolution order: `model` parameter, then `role` parameter against
  * `pstack-models.json`, then the agent definition's `model`, then the parent
- * session model. `inherit-parent` and `auto` role values omit `--model`.
+ * session model. `inherit-parent` and `auto` role values select that parent
+ * model and pass it to the child explicitly.
  */
 
 import { spawn } from "node:child_process";

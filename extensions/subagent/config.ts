@@ -63,7 +63,7 @@ export const DEFAULT_ROLES: RoleConfig = {
   ],
 };
 
-/** `inherit-parent` and `auto` mean: omit `--model` and run on the parent model. */
+/** `inherit-parent` and `auto` mean: run on the parent session model. */
 export const INHERIT_VALUES = new Set(["inherit-parent", "auto"]);
 
 export interface RoleConfigResult {
