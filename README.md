@@ -87,6 +87,7 @@ subagent { chain: [{ agent: "how", task: "..." }, { agent: "worker", task: "... 
 
 - pi with at least one configured provider (`/login`), so `/skill:setup-pstack` has models to offer.
 - Node 24 or newer for the ported `watch-pr` and `orch` scripts. They run on `node --test` and `node:child_process`; Bun is no longer required.
+- `npm install` at the package root before using `watch-pr` or `orch` from a clone. pi runs it for npm and git installs.
 - `gh` and `jq` for `skills/poteto-mode/scripts/watch-pr/watch-pr` and `worktree-audit.sh`.
 
 ## Development
