@@ -17,7 +17,8 @@
   "type": "module",
   "pi": {
     "extensions": [
-      "./extensions"
+      "./extensions",
+      "./node_modules/@juicesharp/rpiv-ask-user-question/index.ts"
     ],
     "skills": [
       "./skills"
@@ -29,8 +30,12 @@
     "check": "npm run typecheck && npm test"
   },
   "dependencies": {
+    "@juicesharp/rpiv-ask-user-question": "2.9.0",
     "commander": "14.0.0"
   },
+  "bundledDependencies": [
+    "@juicesharp/rpiv-ask-user-question"
+  ],
   "peerDependencies": {
     "@earendil-works/pi-agent-core": "*",
     "@earendil-works/pi-ai": "*",
