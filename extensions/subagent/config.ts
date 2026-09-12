@@ -35,7 +35,7 @@ export const DEFAULT_ROLES: RoleConfig = {
   "why investigators": "deepinfra/deepseek-ai/DeepSeek-V4-Flash-0731",
   "why synthesizer": "deepinfra/zai-org/GLM-5.3-Flash",
   "reflect tooling": "deepinfra/google/gemini-3.1-pro",
-  "reflect judgment, divergent, synthesizer": "deepinfra/zai-org/GLM-5.3-Flash",
+  "reflect judgment, reflect divergent, reflect synthesizer": "deepinfra/zai-org/GLM-5.3-Flash",
   "arena runners": [
     "deepinfra/zai-org/GLM-5.3-Flash",
     "deepinfra/google/gemini-3.1-pro",
