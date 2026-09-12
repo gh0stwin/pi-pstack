@@ -7,7 +7,7 @@
 #
 # The intake label defaults to `tracker.labels.intake` ("triage"). A new or
 # reopened issue is triaged as it arrives; a labeled issue is triaged only when
-# it carries the intake label.
+# the event's newly added label is the intake label.
 name: benny-github-triage
 
 on:
@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   triage:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.action != 'labeled' || contains(github.event.issue.labels.*.name, 'triage') }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.action != 'labeled' || github.event.label.name == 'triage' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:

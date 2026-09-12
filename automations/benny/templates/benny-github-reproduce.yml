@@ -29,7 +29,7 @@ concurrency:
 
 jobs:
   reproduce:
-    if: ${{ github.event_name != 'issues' || contains(github.event.issue.labels.*.name, 'needs-repro') }}
+    if: ${{ github.event_name != 'issues' || github.event.label.name == 'needs-repro' }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     permissions:
