@@ -37,7 +37,7 @@ So the port is mostly a re-homing exercise: keep the operational content (the wo
 | `/setup-pstack`, `/poteto-mode` slash commands | `/skill:setup-pstack`, `/skill:poteto-mode` skill commands | `skills/setup-pstack/`, `skills/poteto-mode/` |
 | `~/.cursor/rules/pstack-models.mdc` always-applied rule | `~/.pi/agent/pstack-models.json`, read by the extension at spawn time | `skills/setup-pstack/`, `extensions/subagent/config.ts` |
 | Cursor model slugs (`grok-4.6-fast-xhigh`, `claude-fable-5-1-thinking-max`, `gpt-5.6-sol-max`, `claude-opus-5-thinking-xhigh`) | pi model ids from `pi --list-models` (`provider/model`) | `extensions/subagent/config.ts`, `skills/setup-pstack/SKILL.md` |
-| `AskQuestion` | `ask_question` | adapted in the affected skills |
+| `AskQuestion` | `ask_user_question`, registered by the `@juicesharp/rpiv-ask-user-question` extension package | `package.json` dependency and `pi` manifest; `skills/poteto-mode/SKILL.md`, `skills/setup-pstack/SKILL.md` |
 | `/loop` (built-in wake mechanism) | explicit wake signals: a watcher subagent, `scripts/watch-pr/watch-pr`, a shell heartbeat, or a scheduled `pi -p` run | `skills/poteto-mode/playbooks/autonomous-run.md`, `docs/guide/07-overnight.md` |
 | `/deslop` (from the separate `cursor-team-kit` plugin) | a new `deslop` skill in this package | `skills/deslop/` |
 | Cursor's built-in `create-skill` | a new `create-skill` skill in this package, written against pi's Agent Skills rules | `skills/create-skill/` |
@@ -351,7 +351,7 @@ Ordered by area. Each entry is a change the captain can disagree with.
 
 1. **`package.json` replaces `.cursor-plugin/plugin.json`.** Name `pi-pstack`, version `0.15.2` (tracks upstream), `private: true`, `type: module`, `license: MIT`, keyword `pi-package`, and a `pi` manifest declaring `extensions/` and `skills/`. The upstream `displayName`, `category`, `tags`, `logo`, `homepage`, and `repository` fields have no pi manifest equivalent; the repository and homepage are in `README.md` instead. The `prompts` manifest entry was removed because the package ships no prompt templates: both upstream slash commands are now skills.
 2. **Install path changed.** Upstream: install the plugin from Cursor's marketplace. Here: `pi install git:github.com/gh0stwin/pi-pstack`. `pi install -l` is the project-scoped form Benny uses.
-3. **`dependencies` gained `commander@14.0.0`** for the ported `watch-pr` and `orch` CLIs. It is declared at the package root because pi runs `npm install` there and Node resolves upward from the importing file. `peerDependencies` lists pi's bundled packages (`@earendil-works/pi-*`, `typebox`) with `"*"`, per the package docs.
+3. **`dependencies` gained `commander@14.0.0`** for the ported `watch-pr` and `orch` CLIs. It is declared at the package root because pi runs `npm install` there and Node resolves upward from the importing file. `dependencies` also carries `@juicesharp/rpiv-ask-user-question@2.9.0`, bundled and loaded through the `pi` manifest, for the `ask_user_question` tool that replaces Cursor's `AskQuestion`. `peerDependencies` lists pi's bundled packages (`@earendil-works/pi-*`, `typebox`) with `"*"`, per the package docs.
 4. **Build, test, and lint setup added.** `npm run typecheck` typechecks `extensions/` and the scripts tree; `npm test` runs all 58 tests through `node --test`; `npm run check` runs both. Upstream had no package-level check.
 
 ### Skills
@@ -367,7 +367,7 @@ Ordered by area. Each entry is a change the captain can disagree with.
 13. **`skills/automate-me/SKILL.md` transcript discovery rewritten** for pi sessions: `$PI_SESSION_FILE` for the active session and `<agent dir>/sessions/--<workspace-slug>--/*.jsonl` for history, with the agent-dir override respected.
 14. **`skills/reflect/SKILL.md` and its reviewers** now hand skill creation to the ported `create-skill` skill and describe sessions rather than Cursor transcripts.
 15. **`skills/poteto-mode/references/bugbot-triage.md` → `review-bot-triage.md`.** Renamed and rewritten so the guidance is about review bots in general, not one vendor's bot.
-16. **`skills/poteto-mode/SKILL.md` updated**: `AskQuestion` → `ask_question`, `Task`/`subagent_type` → the `subagent` tool's `agent`/`role`/`readonly` parameters, model slugs → roles, `/loop` → explicit wake signals, Bugbot → review bots, and the `control-cli`/`control-ui` route → a project verification skill. The `mode`, `icon`, `color`, and `reminder` frontmatter fields were dropped.
+16. **`skills/poteto-mode/SKILL.md` updated**: `AskQuestion` → the `ask_user_question` tool from `@juicesharp/rpiv-ask-user-question`, `Task`/`subagent_type` → the `subagent` tool's `agent`/`role`/`readonly` parameters, model slugs → roles, `/loop` → explicit wake signals, Bugbot → review bots, and the `control-cli`/`control-ui` route → a project verification skill. The `mode`, `icon`, `color`, and `reminder` frontmatter fields were dropped.
 17. **`skills/poteto-mode/playbooks/*` (23 playbooks) adapted.** `deslop`, `no-comments`, and the other skill routes use `/skill:` forms; `run_in_background` is gone; autonomous runs name a wake signal instead of `/loop`; PR-status requests no longer disambiguate against a Cursor built-in.
 
 ### Agents and the subagent extension
@@ -455,7 +455,7 @@ The 3 `automations/benny/skills/*/SKILL.md` files are deliberately outside the p
 
 ### Extensions register
 
-`extensions/subagent/index.ts` registers the `subagent` tool, the `pstack_roles` tool, and the `/pstack-models` command. Loaded with `pi -e <path>` in an isolated config directory to confirm registration without installing; typechecked by `npm run typecheck`.
+`extensions/subagent/index.ts` registers the `subagent` tool, the `pstack_roles` tool, and the `/pstack-models` command. Loaded with `pi -e <path>` in an isolated config directory to confirm registration without installing; typechecked by `npm run typecheck`. The `pi` manifest also loads `node_modules/@juicesharp/rpiv-ask-user-question/index.ts`, which registers `ask_user_question`; confirmed by installing the package into an isolated `PI_CODING_AGENT_DIR` and listing the session tools through pi's loader.
 
 ### Scripts
 
