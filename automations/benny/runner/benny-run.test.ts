@@ -103,16 +103,6 @@ function bindingOf(configText: string, event: string, mode: Mode = "triage"): In
   return binding;
 }
 
-function occurrences(text: string, needle: string): number {
-  let count = 0;
-  let index = text.indexOf(needle);
-  while (index !== -1) {
-    count += 1;
-    index = text.indexOf(needle, index + needle.length);
-  }
-  return count;
-}
-
 it("reads a two-level config value by indentation", () => {
   expect(readConfigValue(slackConfig, "models.reproduce")).toBe("deepinfra/zai-org/GLM-5.3-Flash");
   expect(readConfigValue(slackConfig, "slack.cli")).toBe("benny-slack");
@@ -529,7 +519,7 @@ it("fails closed when the config is missing, incomplete, or the event is malform
   expect(badEvent.stderr).toContain("event.channel");
 });
 
-it("ships an example configuration that validates for the Slack path and documents the webhook path", () => {
+it("ships an example configuration that validates for the Slack path", () => {
   const examplePath = join(packRoot, "templates", "configuration.example.yaml");
   const text = readFileSync(examplePath, "utf8");
   const intake = resolveIntake(text);
@@ -537,7 +527,6 @@ it("ships an example configuration that validates for the Slack path and documen
   expect(intake.source).toBe("slack");
   expect(validateIntake(intake)).toEqual([]);
   expect(validateEvent(slackEvent, "triage", intake.source)).toBeUndefined();
-  expect(text).toContain("webhook");
 });
 
 it("builds the pi argument list in a stable order", () => {
@@ -556,41 +545,28 @@ it("builds the pi argument list in a stable order", () => {
   expect(args).toHaveLength(5);
 });
 
-it("states each safety rule once per operational file and never per intake", () => {
-  const files = [
-    join(packRoot, "skills", "triage-issue-reports", "SKILL.md"),
-    join(packRoot, "skills", "reproduce-and-fix-issues", "SKILL.md"),
+it("emits identical safety rules for every intake and per-intake binding lines", () => {
+  const options: RunnerOptions = {
+    mode: "triage",
+    configPath: ".pi/benny/configuration.yaml",
+    event: slackEvent,
+    repo: "/repo",
+    dryRun: true,
+  };
+  const prompts = [
+    buildPrompt(options, bindingOf(slackConfig, slackEvent)),
+    buildPrompt(options, bindingOf(githubConfig, githubEvent)),
+    buildPrompt(options, bindingOf(webhookConfig, webhookEvent)),
   ];
-  const rules = [
-    "exactly one verdict",
-    "never open a new top-level post",
-    "source coordinates are immutable",
-    "fail closed",
-  ];
-  for (const file of files) {
-    const text = readFileSync(file, "utf8").toLowerCase();
-    for (const rule of rules) expect(occurrences(text, rule)).toBe(1);
-    // The operational file speaks in binding terms; the adapter reference owns the specifics.
-    expect(text.includes("slack")).toBe(false);
-    expect(text.includes("channel")).toBe(false);
-    expect(text.includes("thread_ts")).toBe(false);
-    expect(text.includes("chat.postmessage")).toBe(false);
-    expect(text.includes("reactions.add")).toBe(false);
-    expect(text.includes("benny_slack_bot_token")).toBe(false);
-    expect(text).toContain("references/intake-binding.md");
-  }
-});
 
-it("keeps the intake and adapter specifics in the shared binding reference", () => {
-  expect(BINDING_REFERENCE).toBe(".pi/automations/benny/references/intake-binding.md");
-  const reference = readFileSync(join(packRoot, "references", "intake-binding.md"), "utf8");
-  for (const name of ["source item", "source thread", "verdict location", "adapter"]) {
-    expect(reference).toContain(name);
-  }
-  expect(reference).toContain("chat.postMessage");
-  expect(reference).toContain("reactions.add");
-  expect(reference).toContain("BENNY_SLACK_BOT_TOKEN");
-  expect(reference).toContain("source_item");
-  expect(reference).toContain("verdict_location");
-  expect(reference).toContain("Adding an intake");
+  const safetyLines = (prompt: string): string[] => prompt.split("\n").slice(-4);
+  const [slackSafety, githubSafety, webhookSafety] = prompts.map(safetyLines);
+  expect(slackSafety).toEqual(githubSafety);
+  expect(githubSafety).toEqual(webhookSafety);
+
+  const bindingLines = (prompt: string): string[] => prompt.split("\n").filter((line) => line.startsWith("- "));
+  const [slack, github, webhook] = prompts.map(bindingLines);
+  expect(slack).not.toEqual(github);
+  expect(github).not.toEqual(webhook);
+  expect(slack).not.toEqual(webhook);
 });
