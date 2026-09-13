@@ -79,8 +79,9 @@ git worktree list --porcelain | awk '/^worktree /{print $2}' | while read -r wt;
 	# Most recent pi session that operated in this worktree. Match path
 	# followed by "/" or a quote so glint-482 does not match glint-482-r37.
 	# `-F` keeps the path literal: as a regex, a `.` in a path matches a
-	# sibling worktree's sessions, and `(` makes the pattern invalid (rg's
-	# suppressed error would silently report no session at all).
+	# sibling worktree's sessions, and `(` makes the pattern invalid (the
+	# suppressed error would silently report no session at all). grep (not rg)
+	# is used so the lookup needs no ripgrep install.
 	# pi keys sessions by the session's own cwd, so a worktree's sessions live in
 	# their own directory; the repo-level directory is searched too, because a
 	# session started in the main checkout can operate on a sibling worktree.
@@ -90,8 +91,8 @@ git worktree list --porcelain | awk '/^worktree /{print $2}' | while read -r wt;
 	[ -d "$repo_sessions" ] && search_dirs="$repo_sessions"
 	[ -d "$wt_sessions" ] && search_dirs="$search_dirs $wt_sessions"
 	if [ -n "$search_dirs" ]; then
-		# shellcheck disable=SC2086 # word splitting is how rg receives several paths
-		f=$(rg -l -F -e "${wt}/" -e "${wt}\"" $search_dirs 2>/dev/null \
+		# shellcheck disable=SC2086 # word splitting is how grep receives several paths
+		f=$(grep -rF -l -e "${wt}/" -e "${wt}\"" $search_dirs 2>/dev/null \
 			| while IFS= read -r path; do stat_mtime "$path"; done | sort -rn | head -1)
 		if [ -n "$f" ]; then last_ts=$(echo "$f" | awk '{print $1}')
 			last=$(date_from_epoch "$last_ts" 2>/dev/null); fi
