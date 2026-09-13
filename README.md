@@ -6,6 +6,10 @@ This is a **port of the Cursor plugin [`pstack`](https://github.com/cursor/plugi
 
 > **Port status.** The port is landing in reviewable batches. Batch 1 landed the package skeleton and documentation; a later batch landed `poteto-mode` and the writing skills (`deslop`, `no-comments`, `technical-writing`, `unslop`); the next landed the investigation cluster (`how`, `why`, `reflect`, `automate-me`, `recall`, `show-me-your-work`, `teach`); the next landed the verification and review cluster (`setup-pstack`, `create-verification-skill`, `maintain-verification-skill`, `architect`, `arena`, `interrogate`); the next landed the `subagent` extension, the three agent definitions, and the Benny automations; the next landed the remaining workflow skills (`tdd`, `bro`, `blast-radius`, `figure-it-out`, `make-bot-ui`, `typescript-best-practices`, `swarm`, `create-skill`). The next landed the first six principle skills: `boundary-discipline`, `type-system-discipline`, `laziness-protocol`, `minimize-reader-load`, `encode-lessons-in-structure`, and `guard-the-context-window`, of the 23; the next landed five more (`build-the-lever`, `make-operations-idempotent`, `migrate-callers-then-delete-legacy-apis`, `never-block-on-the-human`, and `separate-before-serializing-shared-state`); the next landed six more (`attack-the-premise`, `exhaust-the-design-space`, `experience-first`, `foundational-thinking`, `model-the-domain`, and `redesign-from-first-principles`), bringing the landed principle skills to 17 of the 23; this batch lands the final six principle skills: `outcome-oriented-execution`, `sequence-verifiable-units`, `prove-it-works`, `test-behavior-not-implementation`, `fix-root-causes`, and `subtract-before-you-add`, completing the full set of 23. The sections below describe the completed package.
 
+## Requirements
+
+- pi with at least one configured provider (`/login`), so `/skill:setup-pstack` has models to offer.
+
 ## Install
 
 ```bash
@@ -64,6 +68,12 @@ At the end, setup offers once to generate a project-local verification skill wit
 
 The full walkthrough is in [docs/guide/](./docs/guide/README.md).
 
+### Script requirements
+
+- Node 24 or newer for the ported `watch-pr` and `orch` scripts. They run on `node --test` and `node:child_process`; Bun is no longer required.
+- `npm install` at the package root before using `watch-pr` or `orch` from a clone. pi runs it for npm and git installs.
+- `gh` and `jq` for `skills/poteto-mode/scripts/watch-pr/watch-pr` and `worktree-audit.sh`.
+
 ## Subagents
 
 pi has no built-in subagent primitive, so this package supplies one. The `subagent` tool runs a real `pi` process per task with its own context window:
@@ -82,13 +92,6 @@ subagent { chain: [{ agent: "how", task: "..." }, { agent: "worker", task: "... 
 ## Benny (optional)
 
 `automations/benny/` is a port of the upstream Benny pack: two headless runs that triage issue reports and reproduce confirmed bugs. It is dormant unless you set it up. The intake is opt-in: the Slack path needs a Slack CLI you provide, because pi ships no Slack integration, while a no-Slack install uses GitHub issues or any source that can build an intake binding (the generic webhook/CLI intake) and needs no Slack CLI or token. Every run receives one intake binding (source item, source thread, verdict location, adapter), and the operational files are intake-neutral. See [automations/benny/README.md](./automations/benny/README.md) and [PORTING.md section 3](./PORTING.md#3-deliberate-capability-losses) for what changed.
-
-## Requirements
-
-- pi with at least one configured provider (`/login`), so `/skill:setup-pstack` has models to offer.
-- Node 24 or newer for the ported `watch-pr` and `orch` scripts. They run on `node --test` and `node:child_process`; Bun is no longer required.
-- `npm install` at the package root before using `watch-pr` or `orch` from a clone. pi runs it for npm and git installs.
-- `gh` and `jq` for `skills/poteto-mode/scripts/watch-pr/watch-pr` and `worktree-audit.sh`.
 
 ## Development
 
