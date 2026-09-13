@@ -13,9 +13,11 @@
  * binding in the prompt, so the operational files never assume a source.
  *
  * The intake is opt-in. `intake.source` selects it; when unset, a Slack section
- * infers the Slack intake, a repository section infers GitHub, and a GitLab
- * section infers GitLab. The webhook intake takes the whole binding from the
- * event and needs no configuration section.
+ * infers the Slack intake, a GitLab section infers GitLab, and a repository
+ * section infers GitHub. A config with both GitLab and repository sections is
+ * ambiguous and fails closed until `intake.source` names one. The webhook
+ * intake takes the whole binding from the event and needs no configuration
+ * section.
  *
  * Usage:
  *   node benny-run.ts --mode triage --config .pi/benny/configuration.yaml \
@@ -140,10 +142,13 @@ export function hasConfigSection(text: string, section: string): boolean {
 }
 
 /**
- * Resolve the intake source. `intake.source` wins when present; otherwise the
- * configured section decides, so existing Slack configs keep working and a
- * config without `slack.cli` falls through to the GitHub path. The webhook
- * intake is explicit: it has no section and takes its binding from the event.
+ * Resolve the intake source. `intake.source` wins when present; otherwise a
+ * Slack section infers the Slack intake, a GitLab section infers GitLab, and a
+ * repository section infers GitHub, so existing Slack and GitHub configs keep
+ * working without a declared source. A config with both GitLab and repository
+ * sections is genuinely ambiguous and fails closed until `intake.source` names
+ * one. The webhook intake is explicit: it has no section and takes its binding
+ * from the event.
  */
 export function resolveIntake(text: string): IntakeConfig | RunnerError {
   const declared = readConfigValue(text, "intake.source");
@@ -177,13 +182,24 @@ export function resolveIntake(text: string): IntakeConfig | RunnerError {
     };
   }
 
-  const source: IntakeSource =
-    declared ??
-    (slackCli !== undefined || slackSection
-      ? "slack"
-      : repositoryUrl !== undefined || repositorySection
-        ? "github"
-        : "gitlab");
+  let source: IntakeSource;
+  if (declared !== undefined) {
+    source = declared;
+  } else if (slackCli !== undefined || slackSection) {
+    source = "slack";
+  } else if (
+    (gitlabProject !== undefined || gitlabSection) &&
+    (repositoryUrl !== undefined || repositorySection)
+  ) {
+    return {
+      error:
+        "ambiguous intake: both a repository section (GitHub) and a gitlab section (GitLab) are configured; set intake.source to choose",
+    };
+  } else if (gitlabProject !== undefined || gitlabSection) {
+    source = "gitlab";
+  } else {
+    source = "github";
+  }
   return {
     source,
     slackCli,

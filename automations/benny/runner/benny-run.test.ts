@@ -218,6 +218,21 @@ it("fails closed when no intake source is configured or the value is invalid", (
   expect(invalid.error).toContain("webhook");
 });
 
+it("fails closed when both a repository and a gitlab section are configured without a declared source", () => {
+  const ambiguous = resolveIntake(
+    `repository:\n  url: "https://github.com/example-org/example-repo"\ngitlab:\n  project: "example-org/example-repo"\n  token_env: "GITLAB_TOKEN"\n`,
+  );
+  if (!("error" in ambiguous)) throw new Error("expected an error");
+  expect(ambiguous.error).toContain("ambiguous intake");
+  expect(ambiguous.error).toContain("intake.source");
+
+  const declared = resolveIntake(
+    `intake:\n  source: "gitlab"\nrepository:\n  url: "https://github.com/example-org/example-repo"\ngitlab:\n  project: "example-org/example-repo"\n  token_env: "GITLAB_TOKEN"\n`,
+  );
+  if ("error" in declared) throw new Error(declared.error);
+  expect(declared.source).toBe("gitlab");
+});
+
 it("requires the Slack CLI and source channel for the Slack intake", () => {
   const missingCli = resolveIntake(`slack:\n  source_channel_id: "C0123"\n`);
   if ("error" in missingCli) throw new Error("expected slack intake");

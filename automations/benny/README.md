@@ -15,7 +15,7 @@ benny takes reports from one of four intakes, chosen in the configuration as `in
 | `gitlab` | a gitlab issue, or a `benny-run.ts --event` invocation | one comment on the issue through the tracker adapter | no |
 | `webhook` | any source that runs `benny-run.ts` with a binding payload | one reply or comment through the adapter the payload names | no |
 
-slack is opt-in. a user who does not use slack sets `intake.source: github`, `intake.source: gitlab`, or `intake.source: webhook`, deletes the whole `slack:` section, and installs nothing slack-related. the runner infers the github path from a `repository:` section, the gitlab path from a `gitlab:` section, and fails closed when no intake is configured (a slack section missing its cli or source channel still fails closed). the webhook intake takes its whole binding from the event and needs no configuration section.
+slack is opt-in. a user who does not use slack sets `intake.source: github`, `intake.source: gitlab`, or `intake.source: webhook`, deletes the whole `slack:` section, and installs nothing slack-related. the runner infers the github path from a `repository:` section, the gitlab path from a `gitlab:` section, and fails closed when no intake is configured, when both gitlab and repository sections are configured, or when a slack section is missing its cli or source channel. the webhook intake takes its whole binding from the event and needs no configuration section.
 
 ## the intake binding
 
