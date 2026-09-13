@@ -28,6 +28,7 @@ const model = flag("--model");
 const tools = flag("--tools");
 const thinking = flag("--thinking");
 const promptPath = flag("--append-system-prompt");
+const agentDir = process.env.PI_CODING_AGENT_DIR ?? null;
 let systemPrompt = null;
 try {
   systemPrompt = promptPath === undefined ? null : readFileSync(promptPath, "utf8");
@@ -50,6 +51,7 @@ function record(event) {
       thinking,
       task,
       systemPrompt,
+      agentDir,
     })}\n`,
   );
 }

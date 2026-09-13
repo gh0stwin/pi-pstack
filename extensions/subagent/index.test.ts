@@ -57,6 +57,7 @@ it("spawns one isolated child with the agent prompt, task, and parent model", as
   const entry = firstStart(harness);
 
   expect(entry.cwd).toBe(harness.env.projectDir);
+  expect(entry.agentDir).toBe(harness.env.agentDir);
   expect(entry.task).toBe("summarize the diff");
   expect(entry.model).toBe("parent/model");
   expect(entry.tools).toBeUndefined();
@@ -187,6 +188,13 @@ it("surfaces a child model rejection as a failed result", async () => {
   expect(result.isError).toBe(true);
   expect(textOf(result)).toContain("Model not found: nope/nope");
   expect(subagentDetails(result).results[0].stopReason).toBe("error");
+});
+
+it("fails fast when a child hangs instead of waiting forever", async () => {
+  const harness = new ExtensionHarness();
+  await expect(
+    harness.runTool("subagent", { agent: "worker", task: "hang [[sleep:60000]]" }, { timeoutMs: 500 }),
+  ).rejects.toThrow("timed out");
 });
 
 it("runs every parallel task and keeps their order", async () => {

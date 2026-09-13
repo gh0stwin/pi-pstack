@@ -35,6 +35,8 @@ export interface FakePiEntry {
   readonly thinking?: string;
   readonly task: string;
   readonly systemPrompt: string | null;
+  /** The isolated agent config dir the child inherited, never the ambient global one. */
+  readonly agentDir: string | null;
 }
 
 export interface SingleResultLike {
@@ -71,6 +73,12 @@ export function subagentDetails(result: ToolResultLike): SubagentDetails {
 type CommandOptions = Omit<RegisteredCommand, "name" | "sourceInfo">;
 
 const tempDirs: string[] = [];
+
+/**
+ * A hung child must fail the test, not the pipeline: every tool call is capped
+ * and the child is aborted (killed) when the cap is reached.
+ */
+const DEFAULT_TOOL_TIMEOUT_MS = 20_000;
 
 export function cleanupTempDirs(): void {
   while (tempDirs.length > 0) {
@@ -148,6 +156,8 @@ export interface ContextOptions {
   /** `null` runs with no parent model, the way a session without a model would. */
   readonly model?: { readonly provider: string; readonly id: string } | null;
   readonly thinkingLevel?: ExtensionContext["thinkingLevel"];
+  /** Hard per-call ceiling; a hung child aborts and fails the test instead of hanging the suite. */
+  readonly timeoutMs?: number;
 }
 
 export class ExtensionHarness {
@@ -195,12 +205,29 @@ export class ExtensionHarness {
   async runTool(name: string, params: unknown, options: ContextOptions = {}): Promise<ToolResultLike> {
     const tool = this.tool(name);
     const { ctx } = this.makeContext(options);
-    return withAgentDir(this.env.agentDir, () =>
-      withFakePi(this.env.logPath, async () => {
-        const result = await tool.execute("test-call", params as never, undefined, undefined, ctx);
-        return result as unknown as ToolResultLike;
-      }),
-    );
+    const timeoutMs = options.timeoutMs ?? DEFAULT_TOOL_TIMEOUT_MS;
+    const controller = new AbortController();
+    let rejectTimeout: ((error: Error) => void) | undefined;
+    const guard = new Promise<never>((_resolve, reject) => {
+      rejectTimeout = reject;
+    });
+    const timer = setTimeout(() => {
+      controller.abort();
+      rejectTimeout?.(new Error(`${name} tool call timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+    try {
+      return await Promise.race([
+        withAgentDir(this.env.agentDir, () =>
+          withFakePi(this.env.logPath, async () => {
+            const result = await tool.execute("test-call", params as never, controller.signal, undefined, ctx);
+            return result as unknown as ToolResultLike;
+          }),
+        ),
+        guard,
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   /** Invoke a registered slash command and return the messages it notified. */
@@ -233,7 +260,9 @@ export async function withAgentDir<T>(dir: string, fn: () => Promise<T>): Promis
  * `getPiInvocation` spawns `node <process.argv[1]>` when that path exists,
  * which is exactly how the extension spawns real children under pi; pointing
  * argv[1] at the fixture swaps the model for a deterministic run without
- * changing the extension's spawn path.
+ * changing the extension's spawn path. `PI_CODING_AGENT_DIR` is already set to
+ * the isolated temp agent dir by `withAgentDir`, so a fallback to a real `pi`
+ * (or any child that reads pi config) never inherits the ambient global config.
  */
 export async function withFakePi<T>(logPath: string, fn: () => Promise<T>): Promise<T> {
   const previousArgv1 = process.argv[1];
