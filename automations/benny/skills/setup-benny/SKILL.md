@@ -52,7 +52,7 @@ Then run `pi list -l` and confirm `pi-pstack` resolves in project scope.
 
 Ask for each value below and record it in a user-owned configuration file outside this pack, for example `.pi/benny/configuration.yaml`. Start from [`../../templates/configuration.example.yaml`](../../templates/configuration.example.yaml).
 
-Required for both intakes:
+Required for every intake:
 
 - Intake source (`slack`, `github`, or `webhook`)
 - Repository URL and default branch
