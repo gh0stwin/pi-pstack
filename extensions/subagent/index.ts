@@ -129,9 +129,14 @@ function capOutput(output: string): string {
 
 async function writePromptFile(agentName: string, prompt: string): Promise<{ dir: string; file: string }> {
   const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "pi-pstack-subagent-"));
-  const file = path.join(dir, `prompt-${agentName.replace(/[^\w.-]+/g, "_")}.md`);
-  await fs.promises.writeFile(file, prompt, { encoding: "utf8", mode: 0o600 });
-  return { dir, file };
+  try {
+    const file = path.join(dir, `prompt-${agentName.replace(/[^\w.-]+/g, "_")}.md`);
+    await fs.promises.writeFile(file, prompt, { encoding: "utf8", mode: 0o600 });
+    return { dir, file };
+  } catch (error) {
+    await fs.promises.rm(dir, { recursive: true, force: true }).catch(() => {});
+    throw error;
+  }
 }
 
 interface ResolvedModel {
@@ -187,17 +192,17 @@ async function runSingle(
   if (tools !== undefined && tools.length > 0) args.push("--tools", tools);
 
   let promptDir: string | null = null;
-  if (agent.systemPrompt.trim().length > 0) {
-    const promptFile = await writePromptFile(agent.name, agent.systemPrompt);
-    promptDir = promptFile.dir;
-    args.push("--append-system-prompt", promptFile.file);
-  }
-  args.push(`Task: ${request.task}`);
-
   const current: SingleResult = { ...base, model };
   const emit = () => onUpdate?.({ ...current });
 
   try {
+    if (agent.systemPrompt.trim().length > 0) {
+      const promptFile = await writePromptFile(agent.name, agent.systemPrompt);
+      promptDir = promptFile.dir;
+      args.push("--append-system-prompt", promptFile.file);
+    }
+    args.push(`Task: ${request.task}`);
+
     const exitCode = await new Promise<number>((resolve) => {
       const invocation = getPiInvocation(args);
       const child = spawn(invocation.command, invocation.args, {
@@ -266,6 +271,13 @@ async function runSingle(
       });
     });
     current.exitCode = exitCode;
+    return current;
+  } catch (error) {
+    // An infrastructure failure (for example an unwritable prompt file) is a
+    // failed task, not a rejected batch: throwing here would make parallel
+    // mode abandon its in-flight siblings and drop their results.
+    current.stderr += `${error instanceof Error ? error.message : String(error)}\n`;
+    current.exitCode = 1;
     return current;
   } finally {
     if (promptDir !== null) {
@@ -404,7 +416,7 @@ export default function pstackSubagent(pi: ExtensionAPI) {
         const results: SingleResult[] = [];
         let previous = "";
         for (const item of params.chain) {
-          const task = item.task.replaceAll("{previous}", previous);
+          const task = item.task.split("{previous}").join(previous);
           const result = await runSingle(context, toRequest({ ...item, task }), () =>
             emitProgress("chain", results),
           );

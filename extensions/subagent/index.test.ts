@@ -8,6 +8,7 @@
  * argument construction, concurrency, chain substitution, and result parsing
  * all run unchanged, so these tests pin what the skills actually call.
  */
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { validateToolArguments } from "@earendil-works/pi-ai";
 import { afterEach, expect, it } from "../../skills/poteto-mode/scripts/testing/expect.ts";
@@ -168,6 +169,14 @@ it("applies the bundled comment-sicko agent's readonly frontmatter", async () =>
   expect(entry.argv).toContain("--append-system-prompt");
 });
 
+it("still serves subagent calls when a project agent file is malformed", async () => {
+  const harness = new ExtensionHarness();
+  harness.env.writeProjectAgent("broken.md", "---\nname: broken\ndescription: broken\ntags: [a, b\n---\n");
+  const result = await harness.runTool("subagent", { agent: "worker", task: "work" }, { trusted: true });
+  expect(result.isError).toBe(false);
+  expect(firstStart(harness).task).toBe("work");
+});
+
 it("fails an unknown agent with the available agent list and spawns nothing", async () => {
   const harness = new ExtensionHarness();
   const result = await harness.runTool("subagent", { agent: "ghost", task: "work" });
@@ -250,6 +259,49 @@ it("injects {previous} output into the next chain step", async () => {
   expect(textOf(result)).toContain("Step 1");
   expect(textOf(result)).toContain("Step 2");
   expect(result.isError).toBe(false);
+});
+
+it("substitutes {previous} literally when child output contains $ replacement patterns", async () => {
+  const harness = new ExtensionHarness();
+  const hostile = "literal $& and $` and $' tokens";
+  const result = await harness.runTool("subagent", {
+    chain: [
+      { agent: "worker", task: hostile },
+      { agent: "worker", task: "next {previous} end" },
+    ],
+  });
+  const starts = harness.env.starts();
+  expect(starts).toHaveLength(2);
+  expect(starts[1].task).toBe(`next result:${hostile} end`);
+  expect(result.isError).toBe(false);
+});
+
+it("records a failed parallel task and still reports the sibling that was in flight", async () => {
+  const harness = new ExtensionHarness();
+  harness.env.writeUserAgent("silent.md", "---\nname: silent\ndescription: silent agent\n---\n");
+  const notADirectory = join(harness.env.root, "not-a-directory");
+  writeFileSync(notADirectory, "plain file", "utf8");
+  const previousTmp = process.env.TMPDIR;
+  process.env.TMPDIR = notADirectory;
+  try {
+    const result = await harness.runTool("subagent", {
+      tasks: [
+        { agent: "worker", task: "cannot write its prompt file" },
+        { agent: "silent", task: "sleep [[sleep:300]] still runs" },
+      ],
+    });
+    const details = subagentDetails(result);
+    expect(result.isError).toBe(true);
+    expect(details.results).toHaveLength(2);
+    expect(details.results[0].exitCode).toBe(1);
+    expect(details.results[0].stderr.length > 0).toBe(true);
+    expect(details.results[1].exitCode).toBe(0);
+    expect(details.results[1].output).toContain("still runs");
+    expect(textOf(result)).toContain("Task 2");
+  } finally {
+    if (previousTmp === undefined) delete process.env.TMPDIR;
+    else process.env.TMPDIR = previousTmp;
+  }
 });
 
 it("stops a chain after a failed step", async () => {

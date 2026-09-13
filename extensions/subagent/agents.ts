@@ -71,7 +71,15 @@ function loadAgentsFromDir(dir: string, source: AgentConfig["source"]): AgentCon
     } catch {
       continue;
     }
-    const { frontmatter, body } = parseFrontmatter<AgentFrontmatter>(content);
+    let parsed: { frontmatter: AgentFrontmatter; body: string };
+    try {
+      parsed = parseFrontmatter<AgentFrontmatter>(content);
+    } catch {
+      // A malformed file is skipped like an unreadable one: one bad agent
+      // definition must not take down discovery for every other agent.
+      continue;
+    }
+    const { frontmatter, body } = parsed;
     if (typeof frontmatter.name !== "string" || typeof frontmatter.description !== "string") continue;
     const readonly = frontmatter.readonly === true;
     const tools = readonly ? READONLY_TOOLS : parseToolList(frontmatter.tools);
