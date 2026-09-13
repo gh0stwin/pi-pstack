@@ -13,14 +13,17 @@
  * binding in the prompt, so the operational files never assume a source.
  *
  * The intake is opt-in. `intake.source` selects it; when unset, a Slack section
- * infers the Slack intake and anything else infers GitHub. The webhook intake
- * takes the whole binding from the event and needs no configuration section.
+ * infers the Slack intake, a repository section infers GitHub, and a GitLab
+ * section infers GitLab. The webhook intake takes the whole binding from the
+ * event and needs no configuration section.
  *
  * Usage:
  *   node benny-run.ts --mode triage --config .pi/benny/configuration.yaml \
  *     --event '{"channel":"C0123","ts":"1700000000.000100"}'
  *   node benny-run.ts --mode triage --config .pi/benny/configuration.yaml \
  *     --event '{"issue":123,"url":"https://github.com/org/repo/issues/123"}'
+ *   node benny-run.ts --mode triage --config .pi/benny/configuration.yaml \
+ *     --event '{"iid":42,"url":"https://gitlab.com/group/project/-/issues/42"}'
  *   node benny-run.ts --mode triage --config .pi/benny/configuration.yaml \
  *     --event '{"source_item":"SUP-1234","verdict_location":"SUP-1234#reply",\
  *       "adapter":{"read":"support-cli thread SUP-1234","post":"support-cli reply SUP-1234"}}'
@@ -43,7 +46,7 @@ import { fileURLToPath } from "node:url";
 export type Mode = "triage" | "reproduce";
 
 /** Where a run gets its report from. Slack is one option, not the default install. */
-export type IntakeSource = "slack" | "github" | "webhook";
+export type IntakeSource = "slack" | "github" | "gitlab" | "webhook";
 
 export const OPERATIONAL_FILES: Readonly<Record<Mode, string>> = {
   triage: ".pi/automations/benny/skills/triage-issue-reports/SKILL.md",
@@ -69,6 +72,8 @@ export interface IntakeConfig {
   readonly slackOperationsChannelId?: string;
   readonly slackTriageIdentity?: string;
   readonly repositoryUrl?: string;
+  readonly gitlabProject?: string;
+  readonly gitlabTokenEnv?: string;
   readonly trackerAdapter?: string;
 }
 
@@ -147,18 +152,38 @@ export function resolveIntake(text: string): IntakeConfig | RunnerError {
   const slackOperationsChannelId = readConfigValue(text, "slack.operations_channel_id");
   const slackTriageIdentity = readConfigValue(text, "slack.triage_identity_user_id");
   const repositoryUrl = readConfigValue(text, "repository.url");
+  const gitlabProject = readConfigValue(text, "gitlab.project");
+  const gitlabTokenEnv = readConfigValue(text, "gitlab.token_env");
   const trackerAdapter = readConfigValue(text, "tracker.adapter");
   const slackSection = hasConfigSection(text, "slack");
   const repositorySection = hasConfigSection(text, "repository");
+  const gitlabSection = hasConfigSection(text, "gitlab");
 
-  if (declared !== undefined && declared !== "slack" && declared !== "github" && declared !== "webhook") {
-    return { error: `intake.source must be "slack", "github", or "webhook", got "${declared}"` };
+  if (declared !== undefined && declared !== "slack" && declared !== "github" && declared !== "gitlab" && declared !== "webhook") {
+    return { error: `intake.source must be "slack", "github", "gitlab", or "webhook", got "${declared}"` };
   }
-  if (declared === undefined && slackCli === undefined && repositoryUrl === undefined && !slackSection && !repositorySection) {
-    return { error: "no intake source: set intake.source, or configure slack.cli (Slack) or repository.url (GitHub)" };
+  if (
+    declared === undefined &&
+    slackCli === undefined &&
+    repositoryUrl === undefined &&
+    gitlabProject === undefined &&
+    !slackSection &&
+    !repositorySection &&
+    !gitlabSection
+  ) {
+    return {
+      error:
+        "no intake source: set intake.source, or configure slack.cli (Slack), repository.url (GitHub), or gitlab.project (GitLab)",
+    };
   }
 
-  const source: IntakeSource = declared ?? (slackCli !== undefined || slackSection ? "slack" : "github");
+  const source: IntakeSource =
+    declared ??
+    (slackCli !== undefined || slackSection
+      ? "slack"
+      : repositoryUrl !== undefined || repositorySection
+        ? "github"
+        : "gitlab");
   return {
     source,
     slackCli,
@@ -166,6 +191,8 @@ export function resolveIntake(text: string): IntakeConfig | RunnerError {
     slackOperationsChannelId,
     slackTriageIdentity,
     repositoryUrl,
+    gitlabProject,
+    gitlabTokenEnv,
     trackerAdapter,
   };
 }
@@ -185,6 +212,13 @@ export function validateIntake(intake: IntakeConfig): string[] {
     const errors: string[] = [];
     if (intake.repositoryUrl === undefined) errors.push("repository.url is required for the GitHub intake");
     if (intake.trackerAdapter === undefined) errors.push("tracker.adapter is required for the GitHub intake");
+    return errors;
+  }
+  if (intake.source === "gitlab") {
+    const errors: string[] = [];
+    if (intake.gitlabProject === undefined) errors.push("gitlab.project is required for the GitLab intake");
+    if (intake.gitlabTokenEnv === undefined) errors.push("gitlab.token_env is required for the GitLab intake");
+    if (intake.trackerAdapter === undefined) errors.push("tracker.adapter is required for the GitLab intake");
     return errors;
   }
   return [];
@@ -225,6 +259,20 @@ function githubIssueNumber(event: Record<string, unknown>): number | undefined {
   const url = eventString(event, "url");
   const match = url === undefined ? null : /\/issues\/(\d+)$/.exec(url);
   return match === null ? undefined : Number(match[1]);
+}
+
+function gitlabIssueIid(event: Record<string, unknown>): number | undefined {
+  const iid = event.iid;
+  if (typeof iid === "number" && Number.isInteger(iid) && iid > 0) return iid;
+  if (typeof iid === "string" && /^\d+$/.test(iid)) return Number(iid);
+  return undefined;
+}
+
+/** Parse a GitLab issue URL into its project path and iid. */
+function gitlabIssueUrl(url: string): { readonly project: string; readonly iid: number } | undefined {
+  const match = /^https?:\/\/[^/]+\/(.+)\/-\/issues\/(\d+)$/.exec(url);
+  if (match === null) return undefined;
+  return { project: match[1], iid: Number(match[2]) };
 }
 
 /** True when `location` names `item` as a whole token, not a fragment of a longer id. */
@@ -325,6 +373,24 @@ export function validateEvent(eventText: string, mode: Mode, intake: IntakeConfi
     return undefined;
   }
 
+  if (source === "gitlab") {
+    const iid = gitlabIssueIid(event);
+    if (iid === undefined) {
+      return "event.iid (positive integer) is required for the GitLab intake";
+    }
+    const url = optionalEventString(event, "url");
+    if ("error" in url) return url.error;
+    if (url.value !== undefined) {
+      const parsed = gitlabIssueUrl(url.value);
+      if (parsed === undefined) return "event.url must be a GitLab issue URL (/-/issues/<iid>)";
+      if (parsed.iid !== iid) return "event.iid and event.url must name the same issue";
+      if (intake.gitlabProject !== undefined && parsed.project.toLowerCase() !== intake.gitlabProject.toLowerCase()) {
+        return `event.url must name the configured GitLab project "${intake.gitlabProject}"`;
+      }
+    }
+    return undefined;
+  }
+
   const binding = webhookBinding(event);
   return "error" in binding ? binding.error : undefined;
 }
@@ -411,6 +477,46 @@ function githubBinding(intake: IntakeConfig, event: Record<string, unknown>, swe
   };
 }
 
+function gitlabBinding(intake: IntakeConfig, event: Record<string, unknown>, sweep: boolean): IntakeBinding {
+  const adapterName = intake.trackerAdapter ?? "the configured tracker adapter";
+  const project = intake.gitlabProject ?? "the configured GitLab project";
+  const tokenEnv = intake.gitlabTokenEnv ?? "the configured GitLab token environment variable";
+  const adapter: IntakeAdapter = {
+    name: `the tracker adapter "${adapterName}" (GitLab token from ${tokenEnv})`,
+    read: "read the source issue and its notes through the tracker adapter",
+    post: "post exactly one comment on the source issue through the tracker adapter",
+  };
+  const verdictIdentity = "the tracker identity that posts the verdict";
+
+  if (sweep) {
+    return {
+      source: "gitlab",
+      sourceItem: `the source collection: the issues in ${project} (pick the oldest issue with a trusted triage marker and no repro reply yet)`,
+      sourceThread: "the chosen issue and its notes",
+      verdictLocation: "exactly one comment on the chosen issue",
+      adapter,
+      verdictIdentity,
+      operationsLocation: "the run output",
+    };
+  }
+
+  const iid = gitlabIssueIid(event);
+  const url = eventString(event, "url");
+  const item =
+    iid === undefined
+      ? `the GitLab issue named by the event${url === undefined ? "" : ` (${url})`}`
+      : `GitLab issue ${project}#${iid}${url === undefined ? "" : ` (${url})`}`;
+  return {
+    source: "gitlab",
+    sourceItem: item,
+    sourceThread: "that issue and its notes",
+    verdictLocation: "exactly one comment on that issue",
+    adapter,
+    verdictIdentity,
+    operationsLocation: "the run output",
+  };
+}
+
 /** Build the binding the operational file will follow for this run. */
 export function buildBinding(intake: IntakeConfig, eventText: string, mode: Mode): IntakeBinding | RunnerError {
   const parsed = parseEvent(eventText);
@@ -418,7 +524,9 @@ export function buildBinding(intake: IntakeConfig, eventText: string, mode: Mode
   const event = parsed.event;
   if (intake.source === "webhook") return webhookBinding(event);
   const sweep = mode === "reproduce" && event.sweep === true;
-  return intake.source === "slack" ? slackBinding(intake, event, sweep) : githubBinding(intake, event, sweep);
+  if (intake.source === "slack") return slackBinding(intake, event, sweep);
+  if (intake.source === "github") return githubBinding(intake, event, sweep);
+  return gitlabBinding(intake, event, sweep);
 }
 
 export function resolveModel(options: RunnerOptions, configText: string): string | undefined {

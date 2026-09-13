@@ -352,7 +352,7 @@ Ordered by area. Each entry is a change the captain can disagree with.
 1. **`package.json` replaces `.cursor-plugin/plugin.json`.** Name `pi-pstack`, version `0.15.2` (tracks upstream), `private: true`, `type: module`, `license: MIT`, keyword `pi-package`, and a `pi` manifest declaring `extensions/` and `skills/`. The upstream `displayName`, `category`, `tags`, `logo`, `homepage`, and `repository` fields have no pi manifest equivalent; the repository and homepage are in `README.md` instead. The `prompts` manifest entry was removed because the package ships no prompt templates: both upstream slash commands are now skills.
 2. **Install path changed.** Upstream: install the plugin from Cursor's marketplace. Here: `pi install git:github.com/gh0stwin/pi-pstack`. `pi install -l` is the project-scoped form Benny uses.
 3. **`dependencies` gained `commander@14.0.0`** for the ported `watch-pr` and `orch` CLIs. It is declared at the package root because pi runs `npm install` there and Node resolves upward from the importing file. `dependencies` also carries `@juicesharp/rpiv-ask-user-question@2.9.0`, bundled and loaded through the `pi` manifest, for the `ask_user_question` tool that replaces Cursor's `AskQuestion`. `peerDependencies` lists pi's bundled packages (`@earendil-works/pi-*`, `typebox`) with `"*"`, per the package docs.
-4. **Build, test, and lint setup added.** `npm run typecheck` typechecks `extensions/`, `automations/`, and the scripts tree; `npm test` runs all 121 tests through `node --test`; `npm run check` runs both. Upstream had no package-level check.
+4. **Build, test, and lint setup added.** `npm run typecheck` typechecks `extensions/`, `automations/`, and the scripts tree; `npm test` runs all 128 tests through `node --test`; `npm run check` runs both. Upstream had no package-level check.
 
 ### Skills
 
@@ -413,6 +413,7 @@ Ordered by area. Each entry is a change the captain can disagree with.
 47. **Benny plumbing kept in-repo.** The survey suggested `pi-reactor` (trigger/queue/sink), `@estebanforge/pi-slack-me` (Slack read/reply), and `pi-background-tasks` (attested runs). The port keeps `runner/benny-run.ts` and the Slack CLI contract instead, because those packages add a daemon or runtime dependencies and the optional path must not require them; the survey rated the substitutes a partial fit. Revisit only if a durable queue or hosted daemon becomes a requirement.
 48. **Benny's intakes re-expressed through an intake binding.** Every run now receives one binding naming the source item, the source thread, the single verdict location, and the adapter that reads and posts; the runner builds and validates it and passes it in the `pi -p` prompt. `skills/triage-issue-reports/SKILL.md` and `skills/reproduce-and-fix-issues/SKILL.md` were rewritten in those terms, with the safety rules stated once, generically (exactly one verdict, never a new top-level post, immutable source coordinates, fail closed), so the GitHub path no longer depends on prompt-level translation of Slack vocabulary. `references/intake-binding.md` holds the contract and the per-intake adapter notes (Slack CLI, tracker adapter, webhook commands). The GitHub binding now requires `tracker.adapter` at validation time; the operational file already failed closed without it.
 49. **A generic webhook/CLI intake added.** `intake.source: webhook` takes the whole binding from the event (`source_item`, `source_thread`, `verdict_location`, `adapter.read`, `adapter.post`) and needs no configuration section, so any source that can run the runner becomes configuration rather than code. The runner fails closed on malformed JSON, a missing field, a multi-line adapter command, or a verdict location that disagrees with the source item, and rejects a sweep because this intake has no configured source collection. `templates/benny-webhook-triage.yml` / `templates/benny-webhook-reproduce.yml` and `templates/configuration.example.yaml` document the path. `README.md` records the binding contract and the future-intake candidates.
+50. **A GitLab-issues intake added.** `intake.source: gitlab` reads the issue named by the run event (`event.iid`, with an optional `event.url` that must agree and name the configured `gitlab.project`) and posts the verdict as exactly one comment through the tracker adapter, so the GitLab path needs no Slack values. `gitlab.token_env` names the environment variable that holds the token; the token value never enters YAML. The runner fails closed before `pi` starts on a missing project, token environment, or tracker adapter, and on a missing `iid`, a non-GitLab URL, an `iid`/URL disagreement, or a URL from another project. `templates/benny-gitlab-triage.yml` / `templates/benny-gitlab-reproduce.yml` wire the path: a GitLab issue webhook relays a normalized event as a `benny-gitlab-report` repository_dispatch, and the labeled-event guard fires only on the event's newly added label so a later label change cannot duplicate the verdict. The `intake.source` inference now prefers Slack, then GitHub, then GitLab, and names all four in its errors.
 
 ## 6. Verification performed
 
@@ -459,7 +460,7 @@ The 3 `automations/benny/skills/*/SKILL.md` files are deliberately outside the p
 
 ### Benny pack re-checked through pi's loader
 
-After the intake-binding change, `loadSkillsFromDir` against `automations/benny/skills/` loads three skills (`reproduce-and-fix-issues`, `setup-benny`, `triage-issue-reports`) with zero diagnostics; the two operational files keep `disable-model-invocation: true`. An isolated install (`PI_CODING_AGENT_DIR=$(mktemp -d) pi install <repo>`) loads 50 skills through `DefaultResourceLoader` with zero diagnostics and no skill under `automations/benny`, so installing the package still does not enable Benny. The runner's dry-run mode was driven for the Slack, GitHub, and webhook intakes and for each webhook failure mode (malformed JSON, missing `source_item`, missing `verdict_location`, missing or multi-line adapter commands, and a verdict location that disagrees with the source item); every failure exits 2 before `pi` starts.
+After the intake-binding change, `loadSkillsFromDir` against `automations/benny/skills/` loads three skills (`reproduce-and-fix-issues`, `setup-benny`, `triage-issue-reports`) with zero diagnostics; the two operational files keep `disable-model-invocation: true`. An isolated install (`PI_CODING_AGENT_DIR=$(mktemp -d) pi install <repo>`) loads 50 skills through `DefaultResourceLoader` with zero diagnostics and no skill under `automations/benny`, so installing the package still does not enable Benny. The runner's dry-run mode was driven for the Slack, GitHub, GitLab, and webhook intakes and for each webhook failure mode (malformed JSON, missing `source_item`, missing `verdict_location`, missing or multi-line adapter commands, and a verdict location that disagrees with the source item) and each GitLab failure mode (missing `gitlab.project`, missing `gitlab.token_env`, missing `tracker.adapter`, missing `event.iid`, a non-GitLab URL, an `iid`/URL disagreement, and a URL from another project); every failure exits 2 before `pi` starts.
 
 ### Extensions register
 
@@ -468,16 +469,16 @@ After the intake-binding change, `loadSkillsFromDir` against `automations/benny/
 ### Scripts
 
 ```bash
-npm run check        # typecheck (extensions + automations + scripts) and 121 tests
+npm run check        # typecheck (extensions + automations + scripts) and 128 tests
 ```
 
 ```text
 watch-pr: 39 tests, 0 fail
 orch:     14 tests, 0 fail
-benny-run: 28 tests, 0 fail
-installation: 3 tests, 0 fail
+benny-run: 34 tests, 0 fail
+installation: 4 tests, 0 fail
 subagent: 37 tests, 0 fail
-total:    121 tests, 0 fail
+total:    128 tests, 0 fail
 ```
 
 All under Node 24 with `node --test`. `worktree-audit.sh` passes `bash -n` and was run against this repository (it produced a row with a `LAST_SESSION` date and the `hold-wip` bucket). `check-plan.mjs` behavior is unchanged.

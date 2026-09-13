@@ -55,8 +55,22 @@ models:
   reproduce: "inherit-parent"
 `;
 
+const gitlabConfig = `schema_version: 1
+intake:
+  source: "gitlab"
+gitlab:
+  project: "example-org/example-repo"
+  token_env: "GITLAB_TOKEN"
+tracker:
+  adapter: "glab issue"
+models:
+  triage: "inherit-parent"
+  reproduce: "inherit-parent"
+`;
+
 const slackEvent = '{"channel":"C0123","ts":"1700000000.000100"}';
 const githubEvent = '{"issue":123,"url":"https://github.com/example-org/example-repo/issues/123"}';
+const gitlabEvent = '{"iid":123,"url":"https://gitlab.com/example-org/example-repo/-/issues/123"}';
 const webhookEvent = JSON.stringify({
   source_item: "SUP-1234",
   source_thread: "SUP-1234",
@@ -171,6 +185,21 @@ it("resolves the intake from the declared source or the configured section", () 
   if ("error" in inferredGithub) throw new Error("expected inferred github intake");
   expect(inferredGithub.source).toBe("github");
 
+  const gitlab = resolveIntake(gitlabConfig);
+  if ("error" in gitlab) throw new Error("expected gitlab intake");
+  expect(gitlab.source).toBe("gitlab");
+  expect(gitlab.gitlabProject).toBe("example-org/example-repo");
+  expect(gitlab.gitlabTokenEnv).toBe("GITLAB_TOKEN");
+  expect(gitlab.trackerAdapter).toBe("glab issue");
+
+  const declaredGitlab = resolveIntake(`intake:\n  source: "gitlab"\nslack:\n  cli: "benny-slack"\n`);
+  if ("error" in declaredGitlab) throw new Error("expected declared gitlab intake");
+  expect(declaredGitlab.source).toBe("gitlab");
+
+  const inferredGitlab = resolveIntake(`gitlab:\n  project: "example-org/example-repo"\n`);
+  if ("error" in inferredGitlab) throw new Error("expected inferred gitlab intake");
+  expect(inferredGitlab.source).toBe("gitlab");
+
   const webhook = resolveIntake(webhookConfig);
   if ("error" in webhook) throw new Error("expected webhook intake");
   expect(webhook.source).toBe("webhook");
@@ -185,6 +214,7 @@ it("fails closed when no intake source is configured or the value is invalid", (
   if (!("error" in invalid)) throw new Error("expected an error");
   expect(invalid.error).toContain("slack");
   expect(invalid.error).toContain("github");
+  expect(invalid.error).toContain("gitlab");
   expect(invalid.error).toContain("webhook");
 });
 
@@ -210,6 +240,18 @@ it("requires the repository URL and the tracker adapter for the GitHub intake", 
 
   const complete = resolveIntake(githubConfig);
   if ("error" in complete) throw new Error("expected github intake");
+  expect(validateIntake(complete)).toEqual([]);
+});
+
+it("requires the GitLab project, token environment, and tracker adapter for the GitLab intake", () => {
+  const missing = resolveIntake(`intake:\n  source: "gitlab"\n`);
+  if ("error" in missing) throw new Error("expected gitlab intake");
+  expect(validateIntake(missing)).toContain("gitlab.project is required for the GitLab intake");
+  expect(validateIntake(missing)).toContain("gitlab.token_env is required for the GitLab intake");
+  expect(validateIntake(missing)).toContain("tracker.adapter is required for the GitLab intake");
+
+  const complete = resolveIntake(gitlabConfig);
+  if ("error" in complete) throw new Error("expected gitlab intake");
   expect(validateIntake(complete)).toEqual([]);
 });
 
@@ -239,6 +281,28 @@ it("validates the GitHub event coordinates", () => {
   );
   expect(eventError(githubConfig, "not-json")).toContain("valid JSON");
   expect(eventError(githubConfig, "[]")).toContain("JSON object");
+});
+
+it("validates the GitLab event coordinates", () => {
+  expect(eventError(gitlabConfig, gitlabEvent)).toBeUndefined();
+  expect(eventError(gitlabConfig, '{"iid":"123"}')).toBeUndefined();
+  expect(eventError(gitlabConfig, '{"iid":123}')).toBeUndefined();
+  expect(eventError(gitlabConfig, '{"sweep":true}', "reproduce")).toBeUndefined();
+  expect(eventError(gitlabConfig, "{}")).toContain("event.iid");
+  expect(eventError(gitlabConfig, '{"iid":0}')).toContain("event.iid");
+  expect(eventError(gitlabConfig, '{"iid":"abc"}')).toContain("event.iid");
+  expect(eventError(gitlabConfig, '{"url":"https://gitlab.com/example-org/example-repo/-/issues/123"}')).toContain("event.iid");
+  expect(eventError(gitlabConfig, '{"iid":123,"url":"https://gitlab.com/example-org/example-repo/-/issues/124"}')).toContain(
+    "same issue",
+  );
+  expect(eventError(gitlabConfig, '{"iid":123,"url":"https://github.com/example-org/example-repo/issues/123"}')).toContain(
+    "GitLab issue URL",
+  );
+  expect(eventError(gitlabConfig, '{"iid":123,"url":""}')).toContain("event.url");
+  expect(eventError(gitlabConfig, '{"iid":123,"url":"https://gitlab.com/other-org/other-repo/-/issues/123"}')).toContain(
+    "configured GitLab project",
+  );
+  expect(eventError(gitlabConfig, "not-json")).toContain("valid JSON");
 });
 
 it("names the source item, source thread, verdict location, and adapter for the Slack intake", () => {
@@ -273,6 +337,24 @@ it("names the source item, source thread, verdict location, and adapter for the 
   expect(binding.adapter.post).toContain("exactly one comment");
   expect(binding.verdictIdentity).toContain("tracker identity");
   expect(binding.operationsLocation).toBe("the run output");
+});
+
+it("names the source item, source thread, verdict location, and adapter for the GitLab intake", () => {
+  const binding = bindingOf(gitlabConfig, gitlabEvent);
+  expect(binding.source).toBe("gitlab");
+  expect(binding.sourceItem).toContain("GitLab issue example-org/example-repo#123");
+  expect(binding.sourceItem).toContain("https://gitlab.com/example-org/example-repo/-/issues/123");
+  expect(binding.sourceThread).toContain("issue and its notes");
+  expect(binding.verdictLocation).toBe("exactly one comment on that issue");
+  expect(binding.adapter.name).toContain("glab issue");
+  expect(binding.adapter.name).toContain("GITLAB_TOKEN");
+  expect(binding.adapter.read).toContain("tracker adapter");
+  expect(binding.adapter.post).toContain("exactly one comment");
+  expect(binding.verdictIdentity).toContain("tracker identity");
+  expect(binding.operationsLocation).toBe("the run output");
+
+  const withoutUrl = bindingOf(gitlabConfig, '{"iid":123}');
+  expect(withoutUrl.sourceItem).toBe("GitLab issue example-org/example-repo#123");
 });
 
 it("builds the webhook binding from the event and defaults the thread and the identity", () => {
@@ -332,6 +414,7 @@ it("rejects a sweep for the webhook intake and keeps the sweep binding for the c
   expect(eventError(webhookConfig, '{"sweep":true}', "reproduce")).toContain("cannot sweep");
   expect(eventError(slackConfig, '{"sweep":true}', "reproduce")).toBeUndefined();
   expect(eventError(githubConfig, '{"sweep":true}', "reproduce")).toBeUndefined();
+  expect(eventError(gitlabConfig, '{"sweep":true}', "reproduce")).toBeUndefined();
 
   const slackSweep = bindingOf(slackConfig, '{"sweep":true}', "reproduce");
   expect(slackSweep.sourceItem).toContain("oldest report");
@@ -342,6 +425,12 @@ it("rejects a sweep for the webhook intake and keeps the sweep binding for the c
   expect(githubSweep.sourceItem).toContain("oldest issue");
   expect(githubSweep.verdictLocation).toBe("exactly one comment on the chosen issue");
   expect(githubSweep.adapter.name).toContain("gh issue");
+
+  const gitlabSweep = bindingOf(gitlabConfig, '{"sweep":true}', "reproduce");
+  expect(gitlabSweep.sourceItem).toContain("oldest issue");
+  expect(gitlabSweep.sourceItem).toContain("example-org/example-repo");
+  expect(gitlabSweep.verdictLocation).toBe("exactly one comment on the chosen issue");
+  expect(gitlabSweep.adapter.name).toContain("glab issue");
 });
 
 it("builds a prompt that names the operational file, the event, and the binding", () => {
@@ -383,6 +472,24 @@ it("builds a GitHub prompt that names the tracker adapter and never mentions Sla
   expect(prompt).not.toContain("Slack");
 });
 
+it("builds a GitLab prompt that names the GitLab issue and never mentions Slack", () => {
+  const options: RunnerOptions = {
+    mode: "triage",
+    configPath: ".pi/benny/configuration.yaml",
+    event: gitlabEvent,
+    repo: "/repo",
+    dryRun: true,
+  };
+  const prompt = buildPrompt(options, bindingOf(gitlabConfig, gitlabEvent));
+  expect(prompt).toContain(join("/repo", OPERATIONAL_FILES.triage));
+  expect(prompt).toContain("- intake: gitlab");
+  expect(prompt).toContain("- source item: GitLab issue example-org/example-repo#123");
+  expect(prompt).toContain('- adapter: the tracker adapter "glab issue"');
+  expect(prompt).toContain("- verdict location: exactly one comment on that issue");
+  expect(prompt).not.toContain("Slack");
+  expect(prompt).not.toContain("GitHub");
+});
+
 it("prints the pi command in dry-run mode without starting pi", () => {
   const configPath = tempConfig(slackConfig);
   const { code, stdout } = captureOutput(() =>
@@ -412,6 +519,92 @@ it("runs the GitHub path with no Slack configured and prints a usable command", 
   expect(stdout).toContain("gh issue");
   expect(stdout).not.toContain("Slack");
   expect(stdout).not.toContain("--model");
+});
+
+it("runs the GitLab path in dry-run mode and prints a usable command", () => {
+  const configPath = tempConfig(gitlabConfig);
+  const { code, stdout, stderr } = captureOutput(() =>
+    run({ mode: "triage", configPath, event: gitlabEvent, repo: dirname(configPath), dryRun: true }),
+  );
+
+  expect(stderr).toBe("");
+  expect(code).toBe(0);
+  expect(stdout).toContain('pi "-p" "--no-session"');
+  expect(stdout).toContain(OPERATIONAL_FILES.triage);
+  expect(stdout).toContain("- intake: gitlab");
+  expect(stdout).toContain("GitLab issue example-org/example-repo#123");
+  expect(stdout).toContain("glab issue");
+  expect(stdout).toContain("GITLAB_TOKEN");
+  expect(stdout).not.toContain("Slack");
+  expect(stdout).not.toContain("--model");
+});
+
+it("fails closed through the runner for the GitLab intake", () => {
+  const missingProject = captureOutput(() =>
+    run({
+      mode: "triage",
+      configPath: tempConfig(`intake:\n  source: "gitlab"\ngitlab:\n  token_env: "GITLAB_TOKEN"\ntracker:\n  adapter: "glab issue"\n`),
+      event: gitlabEvent,
+      repo: "/tmp",
+      dryRun: true,
+    }),
+  );
+  expect(missingProject.code).toBe(2);
+  expect(missingProject.stderr).toContain("gitlab.project is required");
+
+  const missingToken = captureOutput(() =>
+    run({
+      mode: "triage",
+      configPath: tempConfig(`intake:\n  source: "gitlab"\ngitlab:\n  project: "example-org/example-repo"\ntracker:\n  adapter: "glab issue"\n`),
+      event: gitlabEvent,
+      repo: "/tmp",
+      dryRun: true,
+    }),
+  );
+  expect(missingToken.code).toBe(2);
+  expect(missingToken.stderr).toContain("gitlab.token_env is required");
+
+  const missingAdapter = captureOutput(() =>
+    run({
+      mode: "triage",
+      configPath: tempConfig(`intake:\n  source: "gitlab"\ngitlab:\n  project: "example-org/example-repo"\n  token_env: "GITLAB_TOKEN"\n`),
+      event: gitlabEvent,
+      repo: "/tmp",
+      dryRun: true,
+    }),
+  );
+  expect(missingAdapter.code).toBe(2);
+  expect(missingAdapter.stderr).toContain("tracker.adapter is required");
+
+  const noIid = captureOutput(() =>
+    run({
+      mode: "triage",
+      configPath: tempConfig(gitlabConfig),
+      event: '{"url":"https://gitlab.com/example-org/example-repo/-/issues/123"}',
+      repo: "/tmp",
+      dryRun: true,
+    }),
+  );
+  expect(noIid.code).toBe(2);
+  expect(noIid.stderr).toContain("event.iid");
+
+  const mismatch = captureOutput(() =>
+    run({
+      mode: "triage",
+      configPath: tempConfig(gitlabConfig),
+      event: '{"iid":123,"url":"https://gitlab.com/example-org/example-repo/-/issues/124"}',
+      repo: "/tmp",
+      dryRun: true,
+    }),
+  );
+  expect(mismatch.code).toBe(2);
+  expect(mismatch.stderr).toContain("same issue");
+
+  const malformed = captureOutput(() =>
+    run({ mode: "triage", configPath: tempConfig(gitlabConfig), event: "not-json", repo: "/tmp", dryRun: true }),
+  );
+  expect(malformed.code).toBe(2);
+  expect(malformed.stderr).toContain("valid JSON");
 });
 
 it("runs the webhook path in dry-run mode from the event binding", () => {
@@ -579,17 +772,20 @@ it("emits identical safety rules for every intake and per-intake binding lines",
   const prompts = [
     buildPrompt(options, bindingOf(slackConfig, slackEvent)),
     buildPrompt(options, bindingOf(githubConfig, githubEvent)),
+    buildPrompt(options, bindingOf(gitlabConfig, gitlabEvent)),
     buildPrompt(options, bindingOf(webhookConfig, webhookEvent)),
   ];
 
   const safetyLines = (prompt: string): string[] => prompt.split("\n").slice(-4);
-  const [slackSafety, githubSafety, webhookSafety] = prompts.map(safetyLines);
+  const [slackSafety, githubSafety, gitlabSafety, webhookSafety] = prompts.map(safetyLines);
   expect(slackSafety).toEqual(githubSafety);
-  expect(githubSafety).toEqual(webhookSafety);
+  expect(githubSafety).toEqual(gitlabSafety);
+  expect(gitlabSafety).toEqual(webhookSafety);
 
   const bindingLines = (prompt: string): string[] => prompt.split("\n").filter((line) => line.startsWith("- "));
-  const [slack, github, webhook] = prompts.map(bindingLines);
+  const [slack, github, gitlab, webhook] = prompts.map(bindingLines);
   expect(slack).not.toEqual(github);
-  expect(github).not.toEqual(webhook);
+  expect(github).not.toEqual(gitlab);
+  expect(gitlab).not.toEqual(webhook);
   expect(slack).not.toEqual(webhook);
 });

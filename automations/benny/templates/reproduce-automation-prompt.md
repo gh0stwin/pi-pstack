@@ -33,6 +33,15 @@ Event, one report, GitHub intake (`intake.source: github`):
 }
 ```
 
+Event, one report, GitLab intake (`intake.source: gitlab`):
+
+```json
+{
+	"iid": 42,
+	"url": "https://gitlab.com/group/project/-/issues/42"
+}
+```
+
 Event, one report, webhook/CLI intake (`intake.source: webhook`):
 
 ```json
@@ -47,7 +56,7 @@ Event, one report, webhook/CLI intake (`intake.source: webhook`):
 }
 ```
 
-Event, scheduled sweep (Slack and GitHub intakes only):
+Event, scheduled sweep (Slack, GitHub, and GitLab intakes only):
 
 ```json
 { "sweep": true }

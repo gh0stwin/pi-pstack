@@ -363,3 +363,84 @@ it("ships GitHub-intake workflows that drive the runner with the no-Slack event,
     expect(invocation[modeIndex + 1]).toBe(mode);
   }
 });
+
+it("ships GitLab-intake workflows that drive the runner with the GitLab event, newly-added-label guard, and env", () => {
+  const cases = [
+    {
+      file: "benny-gitlab-triage.yml",
+      mode: "triage",
+      intakeLabel: "triage",
+      manualBypass: "github.event_name == 'workflow_dispatch'",
+      sweeps: false,
+    },
+    {
+      file: "benny-gitlab-reproduce.yml",
+      mode: "reproduce",
+      intakeLabel: "needs-repro",
+      manualBypass: "github.event_name != 'repository_dispatch'",
+      sweeps: true,
+    },
+  ];
+
+  for (const { file, mode, intakeLabel, manualBypass, sweeps } of cases) {
+    const workflow = parseYaml(readFileSync(join(packageRoot, "automations", "benny", "templates", file), "utf8"));
+
+    const triggers = asRecord(workflow, "on");
+    const dispatch = asRecord(triggers, "repository_dispatch");
+    expect(dispatch.types).toEqual(["benny-gitlab-report"]);
+
+    const manual = asRecord(triggers, "workflow_dispatch");
+    const inputs = asRecord(manual, "inputs");
+    expect(inputs.iid).toBeDefined();
+    expect(inputs.url).toBeDefined();
+    expect(triggers.schedule !== undefined).toBe(sweeps);
+
+    const job = asRecord(workflow, "jobs");
+    const jobName = Object.keys(job)[0];
+    const body = asRecord(job, jobName);
+
+    // The guard must fire on the event's newly added label, never on the issue's
+    // label list, so a later label change cannot re-trigger the run.
+    const guard = String(body.if);
+    expect(guard).toContain(manualBypass);
+    expect(guard).toContain(`github.event.client_payload.label.name == '${intakeLabel}'`);
+    expect(guard).not.toContain("client_payload.issue.labels");
+    expect(guard).not.toContain("github.event.issue.labels.*.name");
+
+    const steps = body.steps;
+    expect(Array.isArray(steps)).toBe(true);
+    const step = (steps as YamlValue[]).find((entry) => {
+      const run = (entry as Record<string, YamlValue>).run;
+      return typeof run === "string" && runnerInvocation(run) !== undefined;
+    });
+    const runRecord = step as Record<string, YamlValue>;
+
+    const env = runRecord.env as Record<string, YamlValue>;
+    expect(env.PI_PROVIDER_KEY).toBeDefined();
+    expect(env.GITLAB_TOKEN).toBeDefined();
+    expect(env.BENNY_SLACK_BOT_TOKEN).toBeUndefined();
+
+    const tokens = runnerInvocation(String(runRecord.run));
+    expect(tokens).toBeDefined();
+    const invocation = tokens as string[];
+    expect(invocation).toContain(".pi/automations/benny/runner/benny-run.ts");
+    expect(invocation).toContain("--config");
+    expect(invocation).toContain("--event");
+    const modeIndex = invocation.indexOf("--mode");
+    expect(modeIndex >= 0).toBe(true);
+    expect(invocation[modeIndex + 1]).toBe(mode);
+
+    // The run step builds the runner event from the GitLab iid and URL, and the
+    // reproduce step keeps the scheduled sweep.
+    const run = String(runRecord.run);
+    if (mode === "triage") {
+      const eventArg = invocation[invocation.indexOf("--event") + 1];
+      expect(eventArg).toContain("iid");
+      expect(eventArg).toContain("url");
+    } else {
+      expect(run).toContain("iid");
+      expect(run).toContain("url");
+      expect(run).toContain("sweep");
+    }
+  }
+});

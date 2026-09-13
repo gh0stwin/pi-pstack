@@ -6,15 +6,16 @@ the files in this directory are dormant setup and run sources. they do not appea
 
 ## intakes
 
-benny takes reports from one of three intakes, chosen in the configuration as `intake.source`:
+benny takes reports from one of four intakes, chosen in the configuration as `intake.source`:
 
 | intake | report arrives as | verdict lands as | needs slack |
 | --- | --- | --- | --- |
 | `slack` | a message in the configured source channel | one thread reply through the repository's slack CLI | yes |
 | `github` | a github issue, or a `benny-run.ts --event` invocation | one comment on the issue through the tracker adapter | no |
+| `gitlab` | a gitlab issue, or a `benny-run.ts --event` invocation | one comment on the issue through the tracker adapter | no |
 | `webhook` | any source that runs `benny-run.ts` with a binding payload | one reply or comment through the adapter the payload names | no |
 
-slack is opt-in. a user who does not use slack sets `intake.source: github` or `intake.source: webhook`, deletes the whole `slack:` section, and installs nothing slack-related. the runner infers the github path when the config has no slack section and fails closed when no intake is configured (a slack section missing its cli or source channel still fails closed). the webhook intake takes its whole binding from the event and needs no configuration section.
+slack is opt-in. a user who does not use slack sets `intake.source: github`, `intake.source: gitlab`, or `intake.source: webhook`, deletes the whole `slack:` section, and installs nothing slack-related. the runner infers the github path from a `repository:` section, the gitlab path from a `gitlab:` section, and fails closed when no intake is configured (a slack section missing its cli or source channel still fails closed). the webhook intake takes its whole binding from the event and needs no configuration section.
 
 ## the intake binding
 
@@ -44,7 +45,7 @@ the runner fails closed on a malformed payload, a missing field, or a verdict lo
 
 ### future intakes
 
-recorded here so adding one needs no archaeology. trackers: github issues (done), gitlab issues (next), linear, jira. chat: discord, microsoft teams, self-hosted mattermost / zulip / rocket.chat. support channels: a plain email inbox, zendesk / intercom / freshdesk, sentry-style error trackers where the bug is already structured. the generic webhook/cli intake covers any later integration as configuration rather than code. `PORTING.md` records the port history and the substitute survey behind this choice.
+recorded here so adding one needs no archaeology. trackers: github issues (done), gitlab issues (done), linear, jira. chat: discord, microsoft teams, self-hosted mattermost / zulip / rocket.chat. support channels: a plain email inbox, zendesk / intercom / freshdesk, sentry-style error trackers where the bug is already structured. the generic webhook/cli intake covers any later integration as configuration rather than code. `PORTING.md` records the port history and the substitute survey behind this choice.
 
 ## how it runs on pi
 
@@ -55,12 +56,13 @@ benny needs a trigger, a report source, a tracker client, and a way to drive the
 | trigger | github actions workflows that run `pi -p`, or `runner/benny-run.ts` locally |
 | slack intake | a slack cli the repository provides, named in `slack.cli` |
 | github intake | the issue named in the run event, plus the tracker adapter for the verdict comment |
+| gitlab intake | the issue named in the run event, plus the GitLab tracker adapter for the verdict comment |
 | webhook intake | the binding in the run event, plus the adapter commands it names |
 | models | pi model ids from `pi --list-models`, or `inherit-parent` |
 | app driving | a verification skill from `/skill:create-verification-skill` |
 | shared skills | `.pi/settings.json` via `pi install -l git:github.com/gh0stwin/pi-pstack` |
 
-slack access is the one capability with no pi equivalent. pi ships no MCP client and no slack integration, so the slack intake calls a cli instead. see `skills/setup-benny/SKILL.md` for the contract that cli must satisfy. the github and webhook intakes need no such cli.
+slack access is the one capability with no pi equivalent. pi ships no MCP client and no slack integration, so the slack intake calls a cli instead. see `skills/setup-benny/SKILL.md` for the contract that cli must satisfy. the github, gitlab, and webhook intakes need no such cli.
 
 the full upstream-to-here mapping and the capability losses are in the repository's `PORTING.md`.
 
@@ -78,8 +80,8 @@ the package-substitute survey suggested `pi-reactor` for triggers, queue, and si
 pi install -l git:github.com/gh0stwin/pi-pstack
 ```
 
-4. choose the intake. for slack, provide a cli that implements the contract in `skills/setup-benny/SKILL.md` and set its name in `slack.cli`. for github, set `intake.source: github` and provide no slack values. for a source that can build the binding itself, set `intake.source: webhook` and provide no slack values.
+4. choose the intake. for slack, provide a cli that implements the contract in `skills/setup-benny/SKILL.md` and set its name in `slack.cli`. for github, set `intake.source: github` and provide no slack values. for gitlab, set `intake.source: gitlab` and provide the project path and the token environment variable name. for a source that can build the binding itself, set `intake.source: webhook` and provide no slack values.
 5. keep user-owned configuration outside the copied pack, for example in `.pi/benny/`. adapt [`configuration.example.yaml`](./templates/configuration.example.yaml) and [`feature-map.example.md`](./skills/reproduce-and-fix-issues/references/feature-map.example.md).
-6. copy the matching workflow pair to `.github/workflows/` (`benny-triage.yml`/`benny-reproduce.yml` for slack, `benny-github-triage.yml`/`benny-github-reproduce.yml` for github, `benny-webhook-triage.yml`/`benny-webhook-reproduce.yml` for webhook), or run [`runner/benny-run.ts`](./runner/benny-run.ts) directly.
+6. copy the matching workflow pair to `.github/workflows/` (`benny-triage.yml`/`benny-reproduce.yml` for slack, `benny-github-triage.yml`/`benny-github-reproduce.yml` for github, `benny-gitlab-triage.yml`/`benny-gitlab-reproduce.yml` for gitlab, `benny-webhook-triage.yml`/`benny-webhook-reproduce.yml` for webhook), or run [`runner/benny-run.ts`](./runner/benny-run.ts) directly.
 7. commit `.pi/settings.json`, `.pi/automations/benny/`, and any secret-free configuration before enabling either run.
 8. send a harmless test report and verify the verdict lands once, at the binding's verdict location.

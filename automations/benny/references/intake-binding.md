@@ -70,7 +70,7 @@ A Slack adapter write is any `post`, `edit`, `react`, or `delete` call and any `
 
 ### Tracker adapter
 
-The tracker is an adapter, not a required vendor: `gh issue` is the reference implementation for GitHub Issues, and a Linear, Jira, or other adapter may implement the same search/read/create/update/link/compensate contract.
+The tracker is an adapter, not a required vendor: `gh issue` is the reference implementation for GitHub Issues, `glab issue` is the GitLab client, and a Linear, Jira, or other adapter may implement the same search/read/create/update/link/compensate contract.
 
 The GitHub intake reuses the tracker adapter as its intake adapter. Its binding is:
 
@@ -78,6 +78,17 @@ The GitHub intake reuses the tracker adapter as its intake adapter. Its binding 
 - source thread: that issue and its comments
 - verdict location: exactly one comment on that issue
 - adapter: `tracker.adapter`; the trusted verdict identity is the tracker identity that posts the verdict, and the operations location is the run output
+
+### GitLab adapter
+
+The GitLab intake reuses the tracker adapter the same way. Its binding is:
+
+- source item: the issue named by the event as `iid`/`url`, in the configured `gitlab.project`
+- source thread: that issue and its notes
+- verdict location: exactly one comment on that issue
+- adapter: `tracker.adapter`, with the GitLab token read from the environment variable named by `gitlab.token_env`; the trusted verdict identity is the tracker identity that posts the verdict, and the operations location is the run output
+
+The runner fails closed before it starts `pi` when `gitlab.project`, `gitlab.token_env`, or `tracker.adapter` is missing, when `event.iid` is missing, when `event.url` is not a GitLab issue URL, when `event.iid` and `event.url` disagree, or when the URL names a different project than `gitlab.project`.
 
 ### Webhook/CLI adapter
 
