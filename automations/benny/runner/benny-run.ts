@@ -346,6 +346,9 @@ export function webhookBinding(event: Record<string, unknown>): IntakeBinding | 
   };
 }
 
+/** Slack message timestamps are "<seconds>.<microseconds>", never multi-line or free text. */
+const SLACK_TS = /^\d+\.\d+$/;
+
 /** Check the trigger payload against the mode and the configured intake. */
 export function validateEvent(eventText: string, mode: Mode, intake: IntakeConfig): string | undefined {
   const parsed = parseEvent(eventText);
@@ -360,9 +363,19 @@ export function validateEvent(eventText: string, mode: Mode, intake: IntakeConfi
   if (source === "slack") {
     const channel = eventString(event, "channel");
     if (channel === undefined) return "event.channel is required for the Slack intake";
-    if (eventString(event, "ts") === undefined) return "event.ts is required for the Slack intake";
-    if (event.thread_ts !== undefined && typeof event.thread_ts !== "string") {
-      return "event.thread_ts must be a string when present";
+    const ts = eventString(event, "ts");
+    if (ts === undefined) return "event.ts is required for the Slack intake";
+    // The binding interpolates ts verbatim, so anything but a Slack timestamp
+    // could forge a binding line. An empty thread_ts falls back to ts, as before.
+    if (!SLACK_TS.test(ts)) return "event.ts must be a Slack message timestamp (digits.digits)";
+    if (event.thread_ts !== undefined) {
+      if (typeof event.thread_ts !== "string") {
+        return "event.thread_ts must be a string when present";
+      }
+      const threadTs = eventString(event, "thread_ts");
+      if (threadTs !== undefined && !SLACK_TS.test(threadTs)) {
+        return "event.thread_ts must be a Slack message timestamp (digits.digits)";
+      }
     }
     if (intake.slackSourceChannelId !== undefined && channel !== intake.slackSourceChannelId) {
       return "event.channel must match slack.source_channel_id";

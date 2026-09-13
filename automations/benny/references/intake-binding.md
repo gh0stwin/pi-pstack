@@ -66,6 +66,8 @@ Its binding is:
 - verdict location: one reply in that thread
 - adapter: the Slack CLI; the trusted verdict identity is `slack.triage_identity_user_id`, and the operations location is `slack.operations_channel_id` when it is configured
 
+The runner fails closed before it starts `pi` when the event is missing `channel` or `ts`, when `ts` or a present `thread_ts` is not a Slack timestamp (`digits.digits`, so a multi-line or free-text value cannot forge a binding line), or when `channel` differs from `slack.source_channel_id`. An empty `thread_ts` falls back to `ts`.
+
 A Slack adapter write is any `post`, `edit`, `react`, or `delete` call and any `chat.postMessage`, `chat.update`, `chat.delete`, or `reactions.add` API call. No worker receives a Slack token. `BENNY_SLACK_BOT_TOKEN` is available only to the CLI, and only for a narrow missing capability such as editing one operations status message.
 
 ### Tracker adapter

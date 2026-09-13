@@ -352,7 +352,7 @@ Ordered by area. Each entry is a change the captain can disagree with.
 1. **`package.json` replaces `.cursor-plugin/plugin.json`.** Name `pi-pstack`, version `0.15.2` (tracks upstream), `private: true`, `type: module`, `license: MIT`, keyword `pi-package`, and a `pi` manifest declaring `extensions/` and `skills/`. The upstream `displayName`, `category`, `tags`, `logo`, `homepage`, and `repository` fields have no pi manifest equivalent; the repository and homepage are in `README.md` instead. The `prompts` manifest entry was removed because the package ships no prompt templates: both upstream slash commands are now skills.
 2. **Install path changed.** Upstream: install the plugin from Cursor's marketplace. Here: `pi install git:github.com/gh0stwin/pi-pstack`. `pi install -l` is the project-scoped form Benny uses.
 3. **`dependencies` gained `commander@14.0.0`** for the ported `watch-pr` and `orch` CLIs. It is declared at the package root because pi runs `npm install` there and Node resolves upward from the importing file. `dependencies` also carries `@juicesharp/rpiv-ask-user-question@2.9.0`, bundled and loaded through the `pi` manifest, for the `ask_user_question` tool that replaces Cursor's `AskQuestion`. `peerDependencies` lists pi's bundled packages (`@earendil-works/pi-*`, `typebox`) with `"*"`, per the package docs.
-4. **Build, test, and lint setup added.** `npm run typecheck` typechecks `extensions/`, `automations/`, and the scripts tree; `npm test` runs all 129 tests through `node --test`; `npm run check` runs both. Upstream had no package-level check.
+4. **Build, test, and lint setup added.** `npm run typecheck` typechecks `extensions/`, `automations/`, and the scripts tree; `npm test` runs all 131 tests through `node --test`; `npm run check` runs both. Upstream had no package-level check.
 
 ### Skills
 
@@ -460,7 +460,7 @@ The 3 `automations/benny/skills/*/SKILL.md` files are deliberately outside the p
 
 ### Benny pack re-checked through pi's loader
 
-After the intake-binding change, `loadSkillsFromDir` against `automations/benny/skills/` loads three skills (`reproduce-and-fix-issues`, `setup-benny`, `triage-issue-reports`) with zero diagnostics; the two operational files keep `disable-model-invocation: true`. An isolated install (`PI_CODING_AGENT_DIR=$(mktemp -d) pi install <repo>`) loads 50 skills through `DefaultResourceLoader` with zero diagnostics and no skill under `automations/benny`, so installing the package still does not enable Benny. The runner's dry-run mode was driven for the Slack, GitHub, GitLab, and webhook intakes and for each webhook failure mode (malformed JSON, missing `source_item`, missing `verdict_location`, missing or multi-line adapter commands, and a verdict location that disagrees with the source item) and each GitLab failure mode (missing `gitlab.project`, missing `gitlab.token_env`, missing `tracker.adapter`, missing `event.iid`, a non-GitLab URL, an `iid`/URL disagreement, and a URL from another project); every failure exits 2 before `pi` starts.
+After the intake-binding change, `loadSkillsFromDir` against `automations/benny/skills/` loads three skills (`reproduce-and-fix-issues`, `setup-benny`, `triage-issue-reports`) with zero diagnostics; the two operational files keep `disable-model-invocation: true`. An isolated install (`PI_CODING_AGENT_DIR=$(mktemp -d) pi install <repo>`) loads 50 skills through `DefaultResourceLoader` with zero diagnostics and no skill under `automations/benny`, so installing the package still does not enable Benny. The runner's dry-run mode was driven for the Slack, GitHub, GitLab, and webhook intakes and for each Slack failure mode (missing `channel` or `ts`, a `ts` or `thread_ts` that is not a Slack timestamp, and a `channel` that differs from `slack.source_channel_id`), each webhook failure mode (malformed JSON, missing `source_item`, missing `verdict_location`, missing or multi-line adapter commands, and a verdict location that disagrees with the source item), and each GitLab failure mode (missing `gitlab.project`, missing `gitlab.token_env`, missing `tracker.adapter`, missing `event.iid`, a non-GitLab URL, an `iid`/URL disagreement, and a URL from another project); every failure exits 2 before `pi` starts.
 
 ### Extensions register
 
@@ -469,16 +469,16 @@ After the intake-binding change, `loadSkillsFromDir` against `automations/benny/
 ### Scripts
 
 ```bash
-npm run check        # typecheck (extensions + automations + scripts) and 129 tests
+npm run check        # typecheck (extensions + automations + scripts) and 131 tests
 ```
 
 ```text
 watch-pr: 39 tests, 0 fail
 orch:     14 tests, 0 fail
-benny-run: 35 tests, 0 fail
+benny-run: 37 tests, 0 fail
 installation: 4 tests, 0 fail
 subagent: 37 tests, 0 fail
-total:    129 tests, 0 fail
+total:    131 tests, 0 fail
 ```
 
 All under Node 24 with `node --test`. `worktree-audit.sh` passes `bash -n` and was run against this repository (it produced a row with a `LAST_SESSION` date and the `hold-wip` bucket). `check-plan.mjs` behavior is unchanged.
