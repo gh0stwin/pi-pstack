@@ -111,6 +111,15 @@ it("finds the nearest project agents directory from a nested cwd", async () => {
   expect(nested.filePath).toBe(join(env.projectDir, ".pi", "agents", "nested.md"));
 });
 
+it("skips an agent file with malformed frontmatter instead of failing discovery", async () => {
+  const env = new TestEnv();
+  env.writeUserAgent("broken.md", "---\nname: broken\ndescription: broken\ntags: [a, b\n---\nbroken body\n");
+  env.writeUserAgent("good.md", agentFile("good"));
+  const agents = await discover(env, env.projectDir, false);
+  expect(agents.map((agent) => agent.name)).toContain("good");
+  expect(agents.some((agent) => agent.name === "broken")).toBe(false);
+});
+
 it("skips markdown without name and description and non-markdown files", async () => {
   const env = new TestEnv();
   env.writeUserAgent("no-name.md", "---\ndescription: no name here\n---\nbody\n");
