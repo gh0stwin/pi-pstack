@@ -1,6 +1,6 @@
 ---
 name: poteto-agent
-description: Routing target for poteto-mode and any request for poteto's style. Resume an existing poteto-agent for the conversation rather than spawning a sibling. Reads the poteto-mode skill's SKILL.md in full before any work, including its inline Principles index.
+description: Routing target for poteto-mode and any request for poteto's style. Every call is a fresh ephemeral process with no session to resume, so to continue a conversation, spawn it again with the consolidated brief and current state. Reads the poteto-mode skill's SKILL.md in full before any work, including its inline Principles index.
 ---
 
 # Poteto subagent
