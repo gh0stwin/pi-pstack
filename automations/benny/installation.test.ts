@@ -284,9 +284,15 @@ function asRecord(value: YamlValue, key: string): Record<string, YamlValue> {
 function assignedEventLiterals(run: string): string[] {
   const literals: string[] = [];
   for (const line of run.split("\n")) {
-    const match = /^\s*event=(?:"(.*)"|'(.*)')\s*$/.exec(line);
-    if (match === null) continue;
-    literals.push(match[1] ?? match[2] ?? "");
+    const direct = /^\s*event=(?:"(.*)"|'(.*)')\s*$/.exec(line);
+    if (direct !== null) {
+      literals.push(direct[1] ?? direct[2] ?? "");
+      continue;
+    }
+    const printed = /^\s*event=\$\(printf '(.*)' "\$iid" "\$url"\)\s*$/.exec(line);
+    if (printed !== null) {
+      literals.push(printed[1]);
+    }
   }
   return literals;
 }
@@ -301,7 +307,9 @@ function resolvedEventLiteral(literal: string): Record<string, unknown> | undefi
     .replace(/\\"/g, '"')
     .replace(/\$\{\{[^}]*\}\}/g, "1")
     .replace(/\$iid\b/g, "1")
-    .replace(/\$url\b/g, "https://gitlab.com/group/project/-/issues/1");
+    .replace(/\$url\b/g, "https://gitlab.com/group/project/-/issues/1")
+    .replace("%s", "1")
+    .replace("%s", "https://gitlab.com/group/project/-/issues/1");
   let parsed: unknown;
   try {
     parsed = JSON.parse(substituted);
@@ -471,28 +479,13 @@ it("ships GitLab-intake workflows that drive the runner with the GitLab event, n
     expect(modeIndex >= 0).toBe(true);
     expect(invocation[modeIndex + 1]).toBe(mode);
 
-    // The run step constructs the JSON runner event from the GitLab iid and
-    // URL: the triage step passes it inline, the reproduce step builds it into
-    // `event` across branches and keeps the scheduled sweep. Parse every
-    // constructed literal so a wrong field name fails the test.
-    const eventArg = invocation[invocation.indexOf("--event") + 1];
-    const inlineEvent = resolvedEventLiteral(eventArg);
-
-    if (mode === "triage") {
-      expect(inlineEvent).toBeDefined();
-      expect((inlineEvent ?? {}).iid).toBeDefined();
-      expect((inlineEvent ?? {}).url).toBeDefined();
-    } else {
-      const assignedLiterals = assignedEventLiterals(String(runRecord.run));
-      expect(assignedLiterals.length > 0).toBe(true);
-      const assignedEvents = assignedLiterals.map(resolvedEventLiteral);
-      for (const event of assignedEvents) {
-        expect(event).toBeDefined();
-        const isReport = event?.iid !== undefined && event?.url !== undefined;
-        const isSweep = event?.sweep === true;
-        expect(isReport || isSweep).toBe(true);
-      }
-      expect(assignedEvents.some((event) => event?.iid !== undefined && event?.url !== undefined)).toBe(true);
+    // The run step builds the JSON runner event from the GitLab iid and URL
+    // with printf over quoted variables, and the reproduce step keeps the
+    // scheduled sweep. Parse every constructed literal so a wrong field name
+    // fails the test.
+    const assignedEvents = assignedEventLiterals(String(runRecord.run)).map(resolvedEventLiteral);
+    expect(assignedEvents.some((event) => event?.iid !== undefined && event?.url !== undefined)).toBe(true);
+    if (mode === "reproduce") {
       expect(assignedEvents.some((event) => event?.sweep === true)).toBe(true);
     }
   }
@@ -540,6 +533,10 @@ interface TemplateScenario {
   readonly issue?: string;
   readonly issueNumber?: string;
   readonly issueUrl?: string;
+  readonly iid?: string;
+  readonly url?: string;
+  readonly dispatchIid?: string;
+  readonly dispatchUrl?: string;
 }
 
 interface TemplateRun {
@@ -561,14 +558,19 @@ function simulateTemplateRun(file: string, scenario: TemplateScenario): Template
     "secrets.PI_PROVIDER_KEY": "provider-key",
     "secrets.BENNY_SLACK_BOT_TOKEN": "slack-token",
     "secrets.GITHUB_TOKEN": "gh-token",
+    "secrets.GITLAB_TOKEN": "gitlab-token",
     "toJSON(github.event.client_payload)": scenario.dispatch,
     "inputs.channel": scenario.channel ?? "",
     "inputs.ts": scenario.ts ?? "",
     "inputs.issue": scenario.issue ?? "",
+    "inputs.iid": scenario.iid ?? "",
+    "inputs.url": scenario.url ?? "",
     "github.event_name": scenario.eventName,
     "github.repository": "acme/widgets",
     "github.event.issue.number": scenario.issueNumber ?? "42",
     "github.event.issue.html_url": scenario.issueUrl ?? "https://github.com/acme/widgets/issues/42",
+    "github.event.client_payload.issue.iid": scenario.dispatchIid ?? "42",
+    "github.event.client_payload.issue.url": scenario.dispatchUrl ?? "https://gitlab.com/acme/widgets/-/issues/42",
   };
   const script = substituteWorkflowExpressions(step.run, values);
   const environment: NodeJS.ProcessEnv = { ...process.env };
@@ -606,17 +608,6 @@ function eventArgument(run: TemplateRun): string | undefined {
 }
 
 const HOSTILE_SHELL = "x'; touch pwned-marker; #";
-
-it("keeps the benny Slack and GitHub run steps free of inline workflow expressions", () => {
-  for (const file of [
-    "benny-triage.yml",
-    "benny-reproduce.yml",
-    "benny-github-triage.yml",
-    "benny-github-reproduce.yml",
-  ]) {
-    expect(workflowRunStep(file).run.includes("${{")).toBe(false);
-  }
-});
 
 it("does not execute hostile Slack payloads or manual inputs interpolated into the workflow step", () => {
   for (const file of ["benny-triage.yml", "benny-reproduce.yml"]) {
@@ -689,4 +680,57 @@ it("does not execute hostile GitHub issue inputs or event URLs", () => {
     expect(issueEvent.issue).toBe(42);
     expect(issueEvent.url).toBe(hostileUrl);
   }
+});
+
+it("does not execute hostile GitLab issue iids or URLs", () => {
+  const hostileIid = "1'; touch pwned-marker; #";
+  const hostileUrl = "https://gitlab.com/acme/widgets/-/issues/1'; touch pwned-marker; $(touch pwned-marker); #";
+  for (const file of ["benny-gitlab-triage.yml", "benny-gitlab-reproduce.yml"]) {
+    const manual = simulateTemplateRun(file, {
+      eventName: "workflow_dispatch",
+      dispatch: "{}",
+      iid: hostileIid,
+      url: hostileUrl,
+    });
+    expect(manual.marker).toBe(false);
+    expect(manual.status).not.toBe(0);
+    expect(eventArgument(manual)).toBeUndefined();
+
+    const manualUrl = simulateTemplateRun(file, {
+      eventName: "workflow_dispatch",
+      dispatch: "{}",
+      iid: "7",
+      url: hostileUrl,
+    });
+    expect(manualUrl.marker).toBe(false);
+    expect(manualUrl.status).toBe(0);
+    expect(JSON.parse(eventArgument(manualUrl) ?? "null")).toEqual({ iid: 7, url: hostileUrl });
+
+    const relay = simulateTemplateRun(file, {
+      eventName: "repository_dispatch",
+      dispatch: "{}",
+      dispatchIid: hostileIid,
+      dispatchUrl: hostileUrl,
+    });
+    expect(relay.marker).toBe(false);
+    expect(relay.status).not.toBe(0);
+    expect(eventArgument(relay)).toBeUndefined();
+
+    const relayUrl = simulateTemplateRun(file, {
+      eventName: "repository_dispatch",
+      dispatch: "{}",
+      dispatchIid: "42",
+      dispatchUrl: hostileUrl,
+    });
+    expect(relayUrl.marker).toBe(false);
+    expect(relayUrl.status).toBe(0);
+    expect(JSON.parse(eventArgument(relayUrl) ?? "null")).toEqual({ iid: 42, url: hostileUrl });
+  }
+});
+
+it("keeps the GitLab reproduce workflow's scheduled sweep", () => {
+  const swept = simulateTemplateRun("benny-gitlab-reproduce.yml", { eventName: "schedule", dispatch: "{}" });
+  expect(swept.marker).toBe(false);
+  expect(swept.status).toBe(0);
+  expect(JSON.parse(eventArgument(swept) ?? "null")).toEqual({ sweep: true });
 });
