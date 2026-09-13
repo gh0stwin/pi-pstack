@@ -5,6 +5,14 @@ runs:
   triage_name: "benny-triage"
   reproduce_name: "benny-reproduce"
 
+# How reports reach Benny. `slack` needs the Slack section below; `github`
+# reads issues from the configured repository through the tracker adapter and
+# needs no Slack setup. A user who does not use Slack deletes the whole slack
+# section and sets source to "github".
+intake:
+  source: "slack" # slack | github
+
+# Slack intake only. Delete this whole section for intake.source: github.
 # Benny has no built-in Slack integration. Point `cli` at the wrapper the
 # repository provides; it must implement the contract in
 # skills/setup-benny/SKILL.md.
@@ -23,6 +31,10 @@ repository:
   forge: "gh"
   pull_request_url_format: "https://github.com/{owner}/{repo}/pull/{number}"
   draft_only: true
+
+# The GitHub intake reads the issue named by the run event
+# (`{"issue":123,"url":"https://github.com/owner/repo/issues/123"}`) and
+# posts the verdict as an issue comment through the tracker adapter below.
 
 tracker:
   type: "github-issues"

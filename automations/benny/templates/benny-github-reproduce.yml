@@ -1,0 +1,74 @@
+# Benny reproduce-and-fix for the GitHub intake. Copy to
+# .github/workflows/benny-github-reproduce.yml in the target repository and
+# adjust the label and the pi install step.
+#
+# Use this pair instead of benny-triage.yml / benny-reproduce.yml when the
+# configuration sets `intake.source: github`. No Slack CLI or token is needed.
+#
+# The reproduce label defaults to `tracker.labels.needs_repro` ("needs-repro").
+# The schedule sweeps for the oldest triaged issue with no repro reply yet; a
+# labeled issue or a manual dispatch runs one issue immediately.
+#
+# Keep `draft_only: true` in the configuration. This workflow never merges.
+name: benny-github-reproduce
+
+on:
+  issues:
+    types: [labeled]
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: Issue number to reproduce
+        required: true
+
+concurrency:
+  group: benny-reproduce
+  cancel-in-progress: false
+
+jobs:
+  reproduce:
+    if: ${{ github.event_name != 'issues' || github.event.label.name == 'needs-repro' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install pi
+        run: npm install -g --ignore-scripts @earendil-works/pi-coding-agent
+
+      - name: Install project packages
+        run: pi install -l git:github.com/gh0stwin/pi-pstack
+
+      - name: Reproduce and fix
+        env:
+          PI_PROVIDER_KEY: ${{ secrets.PI_PROVIDER_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ '${{ github.event_name }}' = 'workflow_dispatch' ]; then
+            number='${{ inputs.issue }}'
+            url="https://github.com/${{ github.repository }}/issues/$number"
+            event="{\"issue\":$number,\"url\":\"$url\"}"
+          elif [ '${{ github.event_name }}' = 'issues' ]; then
+            event="{\"issue\":${{ github.event.issue.number }},\"url\":\"${{ github.event.issue.html_url }}\"}"
+          else
+            # Scheduled sweep: let the skill pick the first triaged issue whose
+            # trusted marker has no repro reply yet.
+            event='{"sweep":true}'
+          fi
+          node .pi/automations/benny/runner/benny-run.ts \
+            --mode reproduce \
+            --config .pi/benny/configuration.yaml \
+            --event "$event"

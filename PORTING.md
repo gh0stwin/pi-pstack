@@ -68,7 +68,7 @@ So the port is mostly a re-homing exercise: keep the operational content (the wo
 These are the things the port could not carry over, each with the concrete reason. Nothing here is a bug; each is a real difference the captain should know about before forming an opinion.
 
 1. **Hosted automations with an editor.** Cursor automations are a hosted product with a trigger, an editor, a readiness check, and an approval flow. pi has no equivalent. Benny now runs as GitHub Actions workflows or a local runner. Lost: the editor UI, the readiness check, and the approval step. Replaced by: committed workflow YAML, `workflow_dispatch`, and setup's verification checklist.
-2. **Built-in Slack integration.** Cursor exposes Slack read/post actions. pi has no MCP client and no Slack integration. Benny now calls a CLI the repository provides. Lost: zero-setup Slack access. Replaced by: a documented CLI contract that the user must implement and own the token for.
+2. **Built-in Slack integration.** Cursor exposes Slack read/post actions. pi has no MCP client and no Slack integration. Benny now calls a CLI the repository provides, or runs the no-Slack intake where the report is a GitHub issue and the verdict is an issue comment. Lost: zero-setup Slack access. Replaced by: a documented CLI contract that the user must implement and own the token for, and an opt-in intake choice that keeps Slack out of installs that do not want it.
 3. **`SendToUser` secret-request cards.** Cursor can request a secret without the model seeing it. pi has no such primitive. `make-bot-ui` now tells the user to generate and store the token themselves.
 4. **The `/loop` wake mechanism.** Cursor's `/loop` re-invokes the agent on a cadence. pi has no loop command, so an autonomous run must name its own wake signal. Lost: the implicit heartbeat. Replaced by: an explicit watcher, `watch-pr`, a shell loop, or a scheduled workflow.
 5. **`disable-model-invocation` semantics.** See change 3 in section 6: in Cursor this flag means "do not auto-invoke, but the agent may still load the skill by name"; in pi it removes the skill from the system prompt entirely, which would have made 46 of 47 skills unreachable to the agent.
@@ -352,7 +352,7 @@ Ordered by area. Each entry is a change the captain can disagree with.
 1. **`package.json` replaces `.cursor-plugin/plugin.json`.** Name `pi-pstack`, version `0.15.2` (tracks upstream), `private: true`, `type: module`, `license: MIT`, keyword `pi-package`, and a `pi` manifest declaring `extensions/` and `skills/`. The upstream `displayName`, `category`, `tags`, `logo`, `homepage`, and `repository` fields have no pi manifest equivalent; the repository and homepage are in `README.md` instead. The `prompts` manifest entry was removed because the package ships no prompt templates: both upstream slash commands are now skills.
 2. **Install path changed.** Upstream: install the plugin from Cursor's marketplace. Here: `pi install git:github.com/gh0stwin/pi-pstack`. `pi install -l` is the project-scoped form Benny uses.
 3. **`dependencies` gained `commander@14.0.0`** for the ported `watch-pr` and `orch` CLIs. It is declared at the package root because pi runs `npm install` there and Node resolves upward from the importing file. `dependencies` also carries `@juicesharp/rpiv-ask-user-question@2.9.0`, bundled and loaded through the `pi` manifest, for the `ask_user_question` tool that replaces Cursor's `AskQuestion`. `peerDependencies` lists pi's bundled packages (`@earendil-works/pi-*`, `typebox`) with `"*"`, per the package docs.
-4. **Build, test, and lint setup added.** `npm run typecheck` typechecks `extensions/` and the scripts tree; `npm test` runs all 58 tests through `node --test`; `npm run check` runs both. Upstream had no package-level check.
+4. **Build, test, and lint setup added.** `npm run typecheck` typechecks `extensions/`, `automations/`, and the scripts tree; `npm test` runs all 73 tests through `node --test`; `npm run check` runs both. Upstream had no package-level check.
 
 ### Skills
 
@@ -400,8 +400,8 @@ Ordered by area. Each entry is a change the captain can disagree with.
 
 35. **Destination changed** from `.cursor/automations/benny/` to `.pi/automations/benny/`, and user configuration from `.cursor/benny/` to `.pi/benny/`.
 36. **Plugin enablement replaced.** Upstream merged a `plugins.pstack.enabled` entry into `.cursor/settings.json`. Here setup runs `pi install -l git:github.com/gh0stwin/pi-pstack`, which writes `.pi/settings.json`.
-37. **Two hosted automations replaced by two headless jobs.** `runner/benny-run.ts` builds the `pi -p` prompt from the config and the event; `templates/benny-triage.yml` and `templates/benny-reproduce.yml` are the GitHub Actions forms. The reproduce job polls on a 15-minute schedule for a report whose trusted marker has no repro reply yet, because a headless job cannot wait inside one run for an unbounded time.
-38. **Slack actions replaced by a CLI contract.** `<cli> thread|permalink|post|react|edit|download`, named in `slack.cli`. The token lives with the CLI, never in YAML and never in a worker's environment.
+37. **Two hosted automations replaced by two headless jobs.** `runner/benny-run.ts` builds the `pi -p` prompt from the config and the event; `templates/benny-triage.yml` and `templates/benny-reproduce.yml` are the GitHub Actions forms for the Slack intake, and `templates/benny-github-triage.yml` / `templates/benny-github-reproduce.yml` are the forms for the GitHub intake. The reproduce job polls on a 15-minute schedule for a report whose trusted marker has no repro reply yet, because a headless job cannot wait inside one run for an unbounded time.
+38. **Slack actions replaced by a CLI contract.** `<cli> thread|permalink|post|react|edit|download`, named in `slack.cli`. The token lives with the CLI, never in YAML and never in a worker's environment. Slack is one of two intakes: `intake.source: github` runs the same operational files with a GitHub issue as the source and the tracker adapter as the verdict sink, and needs no Slack CLI, token, or config section.
 39. **`control-adapter.md` → `verification-adapter.md`**, and the `control.*` config keys became `verification.*`. The concept is unchanged: one skill that can bring the app up, drive it, inspect state, capture evidence, and clean up.
 40. **Model configuration is now pi model ids**, with `inherit-parent`/`auto` supported. The upstream placeholder slugs are gone.
 41. **The tracker config is now adapter-based** (`tracker.adapter`, with `gh issue` as the reference) rather than a vendor-named skill placeholder.
@@ -409,6 +409,8 @@ Ordered by area. Each entry is a change the captain can disagree with.
 43. **Subagent guidance added** to both Benny operational files: spawn workers with `readonly: true`, and never export a Slack token into an environment a worker will inherit.
 44. **Slack-write bans restated in Slack's own API terms** (`chat.postMessage`, `chat.update`, `chat.delete`, `reactions.add`, and the CLI's `post`/`edit`/`react`) rather than Cursor action names.
 45. **Benny README and `FOR_AGENTS.md` rewritten** for the pi flow: merge destination, `pi install -l`, the CLI contract, the workflows, and the new verification checklist.
+46. **Benny installation and Slack made opt-in.** `automations/benny/` stays outside the `pi` manifest, so installing pi-pstack never loads it. The runner resolves `intake.source` (`slack` or `github`, inferred from the configured section when unset), validates the intake and the event shape, and builds the `pi -p` prompt for the chosen source. `templates/configuration.example.yaml` and `skills/setup-benny/SKILL.md` document the no-Slack path, and `templates/benny-github-*.yml` wire the GitHub intake. A config without `slack.cli` no longer fails closed; a Slack config missing `slack.cli` or `slack.source_channel_id` still does.
+47. **Benny plumbing kept in-repo.** The survey suggested `pi-reactor` (trigger/queue/sink), `@estebanforge/pi-slack-me` (Slack read/reply), and `pi-background-tasks` (attested runs). The port keeps `runner/benny-run.ts` and the Slack CLI contract instead, because those packages add a daemon or runtime dependencies and the optional path must not require them; the survey rated the substitutes a partial fit. Revisit only if a durable queue or hosted daemon becomes a requirement.
 
 ## 6. Verification performed
 
@@ -460,14 +462,15 @@ The 3 `automations/benny/skills/*/SKILL.md` files are deliberately outside the p
 ### Scripts
 
 ```bash
-npm run check        # typecheck (extensions + scripts) and 58 tests
+npm run check        # typecheck (extensions + automations + scripts) and 73 tests
 ```
 
 ```text
 watch-pr: 38 tests, 0 fail
 orch:     14 tests, 0 fail
-benny-run: 6 tests, 0 fail
-total:    58 tests, 0 fail
+benny-run: 18 tests, 0 fail
+installation: 2 tests, 0 fail
+total:    73 tests, 0 fail
 ```
 
 All under Node 24 with `node --test`. `worktree-audit.sh` passes `bash -n` and was run against this repository (it produced a row with a `LAST_SESSION` date and the `hold-wip` bucket). `check-plan.mjs` behavior is unchanged.

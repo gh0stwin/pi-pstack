@@ -81,7 +81,7 @@ subagent { chain: [{ agent: "how", task: "..." }, { agent: "worker", task: "... 
 
 ## Benny (optional)
 
-`automations/benny/` is a port of the upstream Benny pack: two headless runs that triage Slack issue reports and reproduce confirmed bugs. It is dormant unless you set it up, and it needs a Slack CLI you provide, because pi ships no Slack integration. See [automations/benny/README.md](./automations/benny/README.md) and [PORTING.md section 3](./PORTING.md#3-deliberate-capability-losses) for what changed.
+`automations/benny/` is a port of the upstream Benny pack: two headless runs that triage issue reports and reproduce confirmed bugs. It is dormant unless you set it up. The intake is opt-in: the Slack path needs a Slack CLI you provide, because pi ships no Slack integration, while a no-Slack install uses GitHub issues or the CLI and needs no Slack CLI or token. See [automations/benny/README.md](./automations/benny/README.md) and [PORTING.md section 3](./PORTING.md#3-deliberate-capability-losses) for what changed.
 
 ## Requirements
 
@@ -94,10 +94,10 @@ subagent { chain: [{ agent: "how", task: "..." }, { agent: "worker", task: "... 
 
 ```bash
 npm install
-npm run check     # typechecks `extensions/` and the poteto-mode scripts tree, then runs the tests
+npm run check     # typechecks `extensions/`, `automations/`, and the poteto-mode scripts tree, then runs the tests
 ```
 
-`npm run typecheck` covers both tsconfigs, and `npm test` runs the `skills/poteto-mode/scripts/` tests plus the Benny runner tests (`automations/benny/runner/`) through `node --test`.
+`npm run typecheck` covers both tsconfigs, and `npm test` runs the `skills/poteto-mode/scripts/` tests plus the Benny tests (`automations/benny/`) through `node --test`.
 
 ## License
 
