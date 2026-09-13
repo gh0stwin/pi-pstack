@@ -143,6 +143,23 @@ it("captures the child's tool calls and summarizes the files it opened", async (
   expect(text).toContain("result:explore [[tools]]");
 });
 
+it("omits never-executed calls from the summary but keeps them flagged in details", async () => {
+  const harness = new ExtensionHarness();
+  const result = await harness.runTool("subagent", { agent: "worker", task: "probe [[truncated]]" });
+  const calls = subagentDetails(result).results[0].toolCalls;
+  expect(calls.map((call) => call.tool)).toEqual(["read", "read"]);
+  expect(calls[0].args).toEqual({ path: "src/alpha.ts" });
+  expect(calls[0].executed).toBe(true);
+  expect(calls[0].isError).toBe(false);
+  expect(calls[1].args).toEqual({ path: "src/private-impl.ts" });
+  expect(calls[1].executed).toBe(true);
+  expect(calls[1].isError).toBe(true);
+
+  const text = textOf(result);
+  expect(text).toContain("files read: src/alpha.ts");
+  expect(text).not.toContain("src/private-impl.ts");
+});
+
 it("omits the tool-call summary when the child made no tool calls", async () => {
   const harness = new ExtensionHarness();
   const result = await harness.runTool("subagent", { agent: "worker", task: "answer only" });

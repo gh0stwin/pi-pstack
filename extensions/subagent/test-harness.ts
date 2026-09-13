@@ -42,6 +42,8 @@ export interface FakePiEntry {
 export interface ToolCallLike {
   readonly tool: string;
   readonly args: Record<string, unknown>;
+  readonly executed: boolean;
+  readonly isError: boolean;
 }
 
 export interface SingleResultLike {

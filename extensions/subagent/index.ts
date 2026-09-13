@@ -66,8 +66,14 @@ function emptyUsage(): UsageStats {
 
 /** One tool call a child made, parsed from its `--mode json` event stream. */
 interface ToolCallRecord {
+  /** The call id pi assigned; matches the `tool_execution_end` event. */
+  toolCallId?: string;
   tool: string;
   args: Record<string, unknown>;
+  /** True once the matching `tool_execution_end` was observed. */
+  executed: boolean;
+  /** The end event's error flag; only meaningful when `executed` is true. */
+  isError: boolean;
 }
 
 export interface SpawnRequest {
@@ -229,6 +235,16 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 /**
+ * True when the call's end event was observed and did not report an error, so
+ * the call actually ran. Calls pi failed before executing (the output-token-
+ * limit path emits a start plus an error end saying "was not executed") and
+ * calls that errored are not attributed as work the child performed.
+ */
+function executedOk(call: ToolCallRecord): boolean {
+  return call.executed && !call.isError;
+}
+
+/**
  * Keep a tool call's arguments inspectable without letting a large `write`
  * payload bloat the parent session: long top-level strings are truncated.
  */
@@ -248,7 +264,7 @@ function collectPaths(calls: readonly ToolCallRecord[], tools: ReadonlySet<strin
   const paths: string[] = [];
   const seen = new Set<string>();
   for (const call of calls) {
-    if (!tools.has(call.tool)) continue;
+    if (!executedOk(call) || !tools.has(call.tool)) continue;
     const value = call.args.path;
     if (typeof value !== "string" || value.length === 0 || seen.has(value)) continue;
     seen.add(value);
@@ -277,7 +293,7 @@ function summarizeToolCalls(calls: readonly ToolCallRecord[]): string {
   ].filter((line): line is string => line !== undefined);
   const other = new Map<string, number>();
   for (const call of calls) {
-    if (FILE_READ_TOOLS.has(call.tool) || FILE_WRITE_TOOLS.has(call.tool)) continue;
+    if (!executedOk(call) || FILE_READ_TOOLS.has(call.tool) || FILE_WRITE_TOOLS.has(call.tool)) continue;
     other.set(call.tool, (other.get(call.tool) ?? 0) + 1);
   }
   if (other.size > 0) {
@@ -392,13 +408,32 @@ async function runSingle(
           message?: Message;
           toolName?: string;
           args?: unknown;
+          toolCallId?: string;
+          isError?: boolean;
         };
         if (record.type === "tool_execution_start") {
           if (typeof record.toolName === "string") {
             current.toolCalls.push({
+              toolCallId: typeof record.toolCallId === "string" ? record.toolCallId : undefined,
               tool: record.toolName,
               args: isPlainObject(record.args) ? compactToolArgs(record.args) : {},
+              executed: false,
+              isError: false,
             });
+          }
+          return;
+        }
+        if (record.type === "tool_execution_end") {
+          const id = record.toolCallId;
+          if (typeof id === "string") {
+            for (let index = current.toolCalls.length - 1; index >= 0; index -= 1) {
+              const call = current.toolCalls[index];
+              if (call.toolCallId === id && !call.executed) {
+                call.executed = true;
+                call.isError = record.isError === true;
+                break;
+              }
+            }
           }
           return;
         }
