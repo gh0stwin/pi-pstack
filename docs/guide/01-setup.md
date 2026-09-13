@@ -18,6 +18,24 @@ To try it without installing:
 pi -e git:github.com/gh0stwin/pi-pstack
 ```
 
+To install it for one project instead of globally, run this from the project folder that should own the installation:
+
+```text
+pi install -l git:github.com/gh0stwin/pi-pstack
+```
+
+`-l` writes `.pi/settings.json` in that folder instead of the global `~/.pi/agent/settings.json`, so nothing is installed globally. Commit that file and your team shares one pinned install.
+
+pi loads project resources only after the project is trusted. The first interactive start asks you; `/trust` saves the decision, and non-interactive runs need `--approve`/`-a` or a saved decision. Project scope is the exact folder that holds `.pi/`, not its parent, its siblings, or a subdirectory of it, so start pi from that folder or nothing loads.
+
+For a pinned or offline setup, install from a local clone:
+
+```text
+pi install -l /absolute/path/to/your/pi-pstack-clone
+```
+
+A local-path install stores a reference, not a copy: pi records a path (normalized to relative) in `.pi/settings.json`, so keep the clone in place with its dependencies installed (`npm install`). Move either the project or the clone and you need to run the install again.
+
 ## Pick your models
 
 Start pi and run:
