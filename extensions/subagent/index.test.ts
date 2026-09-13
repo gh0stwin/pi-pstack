@@ -126,6 +126,41 @@ it("spawns one isolated child with the agent prompt, task, and parent model", as
   expect(textOf(result)).toContain("result:summarize the diff");
 });
 
+it("captures the child's tool calls and summarizes the files it opened", async () => {
+  const harness = new ExtensionHarness();
+  const result = await harness.runTool("subagent", { agent: "worker", task: "explore [[tools]]" });
+  const calls = subagentDetails(result).results[0].toolCalls;
+  expect(calls.map((call) => call.tool)).toEqual(["read", "read", "read", "grep", "write"]);
+  expect(calls[0].args).toEqual({ path: "src/alpha.ts" });
+  const write = calls.find((call) => call.tool === "write");
+  expect(write?.args.path).toBe("notes.md");
+  expect(String(write?.args.content)).toContain("chars omitted");
+
+  const text = textOf(result);
+  expect(text).toContain("files read: src/alpha.ts, src/beta.ts");
+  expect(text).toContain("files modified: notes.md");
+  expect(text).toContain("other tool calls: grep×1");
+  expect(text).toContain("result:explore [[tools]]");
+});
+
+it("omits the tool-call summary when the child made no tool calls", async () => {
+  const harness = new ExtensionHarness();
+  const result = await harness.runTool("subagent", { agent: "worker", task: "answer only" });
+  expect(subagentDetails(result).results[0].toolCalls).toEqual([]);
+  expect(textOf(result)).not.toContain("files read:");
+  expect(textOf(result)).not.toContain("files modified:");
+  expect(textOf(result)).not.toContain("other tool calls:");
+});
+
+it("caps the file summary and counts the omitted paths", async () => {
+  const harness = new ExtensionHarness();
+  const result = await harness.runTool("subagent", { agent: "worker", task: "sweep [[many-tools]]" });
+  expect(subagentDetails(result).results[0].toolCalls).toHaveLength(13);
+  expect(textOf(result)).toContain("files read: src/file-0.ts");
+  expect(textOf(result)).toContain("(+1 more)");
+  expect(textOf(result)).not.toContain("src/file-12.ts");
+});
+
 it("prefers the per-call model over the role and the agent model", async () => {
   const harness = new ExtensionHarness();
   harness.env.writeUserAgent("modelled.md", agentFile("modelled", { model: "agent/model" }));

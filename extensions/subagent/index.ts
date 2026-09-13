@@ -64,6 +64,12 @@ function emptyUsage(): UsageStats {
   return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 };
 }
 
+/** One tool call a child made, parsed from its `--mode json` event stream. */
+interface ToolCallRecord {
+  tool: string;
+  args: Record<string, unknown>;
+}
+
 export interface SpawnRequest {
   readonly agent: string;
   readonly task: string;
@@ -84,6 +90,7 @@ interface SingleResult {
   output: string;
   stderr: string;
   usage: UsageStats;
+  toolCalls: ToolCallRecord[];
   stopReason?: string;
   errorMessage?: string;
 }
@@ -211,6 +218,74 @@ function capOutput(output: string): string {
   return `${truncated}\n\n[Output truncated: ${bytes - Buffer.byteLength(truncated, "utf8")} bytes omitted. Full output preserved in tool details.]`;
 }
 
+const TOOL_ARG_STRING_CAP = 400;
+const SUMMARY_PATH_LIMIT = 12;
+
+const FILE_READ_TOOLS: ReadonlySet<string> = new Set(["read"]);
+const FILE_WRITE_TOOLS: ReadonlySet<string> = new Set(["write", "edit"]);
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Keep a tool call's arguments inspectable without letting a large `write`
+ * payload bloat the parent session: long top-level strings are truncated.
+ */
+function compactToolArgs(args: Record<string, unknown>): Record<string, unknown> {
+  const compact: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(args)) {
+    if (typeof value === "string" && value.length > TOOL_ARG_STRING_CAP) {
+      compact[key] = `${value.slice(0, TOOL_ARG_STRING_CAP)}...[${value.length - TOOL_ARG_STRING_CAP} chars omitted]`;
+    } else {
+      compact[key] = value;
+    }
+  }
+  return compact;
+}
+
+function collectPaths(calls: readonly ToolCallRecord[], tools: ReadonlySet<string>): string[] {
+  const paths: string[] = [];
+  const seen = new Set<string>();
+  for (const call of calls) {
+    if (!tools.has(call.tool)) continue;
+    const value = call.args.path;
+    if (typeof value !== "string" || value.length === 0 || seen.has(value)) continue;
+    seen.add(value);
+    paths.push(value);
+  }
+  return paths;
+}
+
+function renderPathLine(label: string, paths: readonly string[]): string | undefined {
+  if (paths.length === 0) return undefined;
+  const shown = paths.slice(0, SUMMARY_PATH_LIMIT);
+  const omitted = paths.length - shown.length;
+  return `${label}: ${shown.join(", ")}${omitted > 0 ? ` (+${omitted} more)` : ""}`;
+}
+
+/**
+ * One compact line per category so the parent can grade chain-following
+ * without pulling every tool call into its context window. The full per-call
+ * list stays on the structured result.
+ */
+function summarizeToolCalls(calls: readonly ToolCallRecord[]): string {
+  if (calls.length === 0) return "";
+  const lines = [
+    renderPathLine("files read", collectPaths(calls, FILE_READ_TOOLS)),
+    renderPathLine("files modified", collectPaths(calls, FILE_WRITE_TOOLS)),
+  ].filter((line): line is string => line !== undefined);
+  const other = new Map<string, number>();
+  for (const call of calls) {
+    if (FILE_READ_TOOLS.has(call.tool) || FILE_WRITE_TOOLS.has(call.tool)) continue;
+    other.set(call.tool, (other.get(call.tool) ?? 0) + 1);
+  }
+  if (other.size > 0) {
+    lines.push(`other tool calls: ${[...other.entries()].map(([tool, count]) => `${tool}×${count}`).join(", ")}`);
+  }
+  return lines.join("\n");
+}
+
 async function writePromptFile(agentName: string, prompt: string): Promise<{ dir: string; file: string }> {
   const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "pi-pstack-subagent-"));
   try {
@@ -258,6 +333,7 @@ async function runSingle(
     output: "",
     stderr: "",
     usage: emptyUsage(),
+    toolCalls: [],
   };
   if (agent === undefined) {
     const available = context.agents.map((candidate) => candidate.name).join(", ") || "none";
@@ -277,7 +353,7 @@ async function runSingle(
 
   let promptDir: string | null = null;
   const current: SingleResult = { ...base, model };
-  const emit = () => onUpdate?.({ ...current });
+  const emit = () => onUpdate?.({ ...current, toolCalls: [...current.toolCalls] });
 
   try {
     if (agent.systemPrompt.trim().length > 0) {
@@ -311,7 +387,21 @@ async function runSingle(
         } catch {
           return;
         }
-        const record = event as { type?: string; message?: Message };
+        const record = event as {
+          type?: string;
+          message?: Message;
+          toolName?: string;
+          args?: unknown;
+        };
+        if (record.type === "tool_execution_start") {
+          if (typeof record.toolName === "string") {
+            current.toolCalls.push({
+              tool: record.toolName,
+              args: isPlainObject(record.args) ? compactToolArgs(record.args) : {},
+            });
+          }
+          return;
+        }
         if (record.type === "message_end" && record.message !== undefined) {
           const message = record.message;
           if (message.role === "assistant") {
@@ -391,11 +481,13 @@ async function mapWithConcurrency<TIn, TOut>(
 function describeResult(result: SingleResult): string {
   const label = result.model ? `${result.agent} (${result.model})` : result.agent;
   const usage = formatUsage(result.usage, undefined);
+  const trail = summarizeToolCalls(result.toolCalls);
+  const trailSuffix = trail.length > 0 ? `\n${trail}` : "";
   if (isFailed(result)) {
     const reason = result.errorMessage ?? result.stderr.trim() ?? result.output.trim() ?? "(no output)";
-    return `✗ ${label} failed: ${reason}`;
+    return `✗ ${label} failed: ${reason}${trailSuffix}`;
   }
-  return `✓ ${label}${usage ? ` ${usage}` : ""}\n${capOutput(result.output.trim() || "(no output)")}`;
+  return `✓ ${label}${usage ? ` ${usage}` : ""}${trailSuffix}\n${capOutput(result.output.trim() || "(no output)")}`;
 }
 
 const SpawnItem = Type.Object({
