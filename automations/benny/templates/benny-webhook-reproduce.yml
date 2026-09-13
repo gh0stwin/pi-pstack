@@ -5,7 +5,7 @@
 # Use this pair when the configuration sets `intake.source: webhook`. The
 # source hands the runner a complete binding; see benny-webhook-triage.yml for
 # the payload shape. The reproduce workflow accepts the same `benny-report`
-# dispatch as triage and an explicit `benny-reproduce` dispatch for a run that
+# dispatch as triage; `workflow_dispatch` is the manual path for a run that
 # starts later.
 #
 # The webhook intake has no configured source collection, so it cannot sweep:
@@ -15,7 +15,7 @@ name: benny-webhook-reproduce
 
 on:
   repository_dispatch:
-    types: [benny-report, benny-reproduce]
+    types: [benny-report]
   workflow_dispatch:
     inputs:
       binding:

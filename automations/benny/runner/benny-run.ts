@@ -283,20 +283,25 @@ export function webhookBinding(event: Record<string, unknown>): IntakeBinding | 
 }
 
 /** Check the trigger payload against the mode and the configured intake. */
-export function validateEvent(eventText: string, mode: Mode, source: IntakeSource): string | undefined {
+export function validateEvent(eventText: string, mode: Mode, intake: IntakeConfig): string | undefined {
   const parsed = parseEvent(eventText);
   if ("error" in parsed) return parsed.error;
   const event = parsed.event;
+  const source = intake.source;
 
   if (mode === "reproduce" && event.sweep === true) {
     return source === "webhook" ? "the webhook intake cannot sweep: send an explicit binding" : undefined;
   }
 
   if (source === "slack") {
-    if (eventString(event, "channel") === undefined) return "event.channel is required for the Slack intake";
+    const channel = eventString(event, "channel");
+    if (channel === undefined) return "event.channel is required for the Slack intake";
     if (eventString(event, "ts") === undefined) return "event.ts is required for the Slack intake";
     if (event.thread_ts !== undefined && typeof event.thread_ts !== "string") {
       return "event.thread_ts must be a string when present";
+    }
+    if (intake.slackSourceChannelId !== undefined && channel !== intake.slackSourceChannelId) {
+      return "event.channel must match slack.source_channel_id";
     }
     return undefined;
   }
@@ -524,7 +529,7 @@ export function run(options: RunnerOptions): number {
   }
 
   const errors = validateIntake(intake);
-  const eventError = validateEvent(options.event, options.mode, intake.source);
+  const eventError = validateEvent(options.event, options.mode, intake);
   if (eventError !== undefined) errors.push(eventError);
   if (errors.length > 0) {
     process.stderr.write(`benny: ${errors.join("; ")}\n`);

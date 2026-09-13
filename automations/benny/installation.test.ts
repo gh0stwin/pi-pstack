@@ -281,7 +281,7 @@ function asRecord(value: YamlValue, key: string): Record<string, YamlValue> {
 it("ships webhook-intake workflows that pass the event binding and carry no Slack values", () => {
   const cases = [
     { file: "benny-webhook-triage.yml", mode: "triage", types: ["benny-report"] },
-    { file: "benny-webhook-reproduce.yml", mode: "reproduce", types: ["benny-report", "benny-reproduce"] },
+    { file: "benny-webhook-reproduce.yml", mode: "reproduce", types: ["benny-report"] },
   ];
 
   for (const { file, mode, types } of cases) {

@@ -103,6 +103,12 @@ function bindingOf(configText: string, event: string, mode: Mode = "triage"): In
   return binding;
 }
 
+function eventError(configText: string, event: string, mode: Mode = "triage"): string | undefined {
+  const intake = resolveIntake(configText);
+  if ("error" in intake) throw new Error(intake.error);
+  return validateEvent(event, mode, intake);
+}
+
 it("reads a two-level config value by indentation", () => {
   expect(readConfigValue(slackConfig, "models.reproduce")).toBe("deepinfra/zai-org/GLM-5.3-Flash");
   expect(readConfigValue(slackConfig, "slack.cli")).toBe("benny-slack");
@@ -208,26 +214,31 @@ it("requires the repository URL and the tracker adapter for the GitHub intake", 
 });
 
 it("validates the Slack event coordinates", () => {
-  expect(validateEvent(slackEvent, "triage", "slack")).toBeUndefined();
-  expect(validateEvent('{"channel":"C0123","ts":"1.2","thread_ts":"1.0"}', "triage", "slack")).toBeUndefined();
-  expect(validateEvent("{}", "triage", "slack")).toContain("event.channel");
-  expect(validateEvent('{"channel":"C0123"}', "triage", "slack")).toContain("event.ts");
-  expect(validateEvent('{"channel":"C0123","ts":"1.2","thread_ts":7}', "triage", "slack")).toContain("thread_ts");
-  expect(validateEvent('{"sweep":true}', "reproduce", "slack")).toBeUndefined();
+  expect(eventError(slackConfig, slackEvent)).toBeUndefined();
+  expect(eventError(slackConfig, '{"channel":"C0123","ts":"1.2","thread_ts":"1.0"}')).toBeUndefined();
+  expect(eventError(slackConfig, "{}")).toContain("event.channel");
+  expect(eventError(slackConfig, '{"channel":"C0123"}')).toContain("event.ts");
+  expect(eventError(slackConfig, '{"channel":"C0123","ts":"1.2","thread_ts":7}')).toContain("thread_ts");
+  expect(eventError(slackConfig, '{"sweep":true}', "reproduce")).toBeUndefined();
+});
+
+it("fails closed when the Slack event channel differs from the configured source channel", () => {
+  expect(eventError(slackConfig, '{"channel":"C9999","ts":"1.2"}')).toContain("must match");
+  expect(eventError(slackConfig, '{"channel":"C0123","ts":"1.2"}')).toBeUndefined();
 });
 
 it("validates the GitHub event coordinates", () => {
-  expect(validateEvent(githubEvent, "triage", "github")).toBeUndefined();
-  expect(validateEvent('{"issue":"123"}', "triage", "github")).toBeUndefined();
-  expect(validateEvent('{"url":"https://github.com/example-org/example-repo/issues/123"}', "triage", "github")).toBeUndefined();
-  expect(validateEvent('{"sweep":true}', "reproduce", "github")).toBeUndefined();
-  expect(validateEvent("{}", "triage", "github")).toContain("event.issue");
-  expect(validateEvent('{"issue":0}', "triage", "github")).toContain("event.issue");
-  expect(validateEvent('{"issue":123,"url":"https://github.com/example-org/example-repo/issues/124"}', "triage", "github")).toContain(
+  expect(eventError(githubConfig, githubEvent)).toBeUndefined();
+  expect(eventError(githubConfig, '{"issue":"123"}')).toBeUndefined();
+  expect(eventError(githubConfig, '{"url":"https://github.com/example-org/example-repo/issues/123"}')).toBeUndefined();
+  expect(eventError(githubConfig, '{"sweep":true}', "reproduce")).toBeUndefined();
+  expect(eventError(githubConfig, "{}")).toContain("event.issue");
+  expect(eventError(githubConfig, '{"issue":0}')).toContain("event.issue");
+  expect(eventError(githubConfig, '{"issue":123,"url":"https://github.com/example-org/example-repo/issues/124"}')).toContain(
     "same issue",
   );
-  expect(validateEvent("not-json", "triage", "github")).toContain("valid JSON");
-  expect(validateEvent("[]", "triage", "github")).toContain("JSON object");
+  expect(eventError(githubConfig, "not-json")).toContain("valid JSON");
+  expect(eventError(githubConfig, "[]")).toContain("JSON object");
 });
 
 it("names the source item, source thread, verdict location, and adapter for the Slack intake", () => {
@@ -284,7 +295,7 @@ it("builds the webhook binding from the event and defaults the thread and the id
 });
 
 it("validates the webhook payload fail-closed", () => {
-  expect(validateEvent(webhookEvent, "triage", "webhook")).toBeUndefined();
+  expect(eventError(webhookConfig, webhookEvent)).toBeUndefined();
 
   const cases: Array<[string, string]> = [
     ['{"verdict_location":"SUP-1234#reply","adapter":{"read":"r","post":"p"}}', "source_item"],
@@ -302,7 +313,7 @@ it("validates the webhook payload fail-closed", () => {
     ["[]", "JSON object"],
   ];
   for (const [event, message] of cases) {
-    const error = validateEvent(event, "triage", "webhook");
+    const error = eventError(webhookConfig, event);
     expect(error).toBeDefined();
     expect(error ?? "").toContain(message);
   }
@@ -318,9 +329,9 @@ it("matches the verdict location to the source item as a whole token", () => {
 });
 
 it("rejects a sweep for the webhook intake and keeps the sweep binding for the configured intakes", () => {
-  expect(validateEvent('{"sweep":true}', "reproduce", "webhook")).toContain("cannot sweep");
-  expect(validateEvent('{"sweep":true}', "reproduce", "slack")).toBeUndefined();
-  expect(validateEvent('{"sweep":true}', "reproduce", "github")).toBeUndefined();
+  expect(eventError(webhookConfig, '{"sweep":true}', "reproduce")).toContain("cannot sweep");
+  expect(eventError(slackConfig, '{"sweep":true}', "reproduce")).toBeUndefined();
+  expect(eventError(githubConfig, '{"sweep":true}', "reproduce")).toBeUndefined();
 
   const slackSweep = bindingOf(slackConfig, '{"sweep":true}', "reproduce");
   expect(slackSweep.sourceItem).toContain("oldest report");
@@ -517,6 +528,18 @@ it("fails closed when the config is missing, incomplete, or the event is malform
   );
   expect(badEvent.code).toBe(2);
   expect(badEvent.stderr).toContain("event.channel");
+
+  const wrongChannel = captureOutput(() =>
+    run({
+      mode: "triage",
+      configPath: tempConfig(slackConfig),
+      event: '{"channel":"C9999","ts":"1.2"}',
+      repo: "/tmp",
+      dryRun: true,
+    }),
+  );
+  expect(wrongChannel.code).toBe(2);
+  expect(wrongChannel.stderr).toContain("must match");
 });
 
 it("ships an example configuration that validates for the Slack path", () => {
@@ -526,7 +549,7 @@ it("ships an example configuration that validates for the Slack path", () => {
   if ("error" in intake) throw new Error(intake.error);
   expect(intake.source).toBe("slack");
   expect(validateIntake(intake)).toEqual([]);
-  expect(validateEvent(slackEvent, "triage", intake.source)).toBeUndefined();
+  expect(eventError(text, '{"channel":"SOURCE_CHANNEL_ID","ts":"1700000000.000100"}')).toBeUndefined();
 });
 
 it("builds the pi argument list in a stable order", () => {
