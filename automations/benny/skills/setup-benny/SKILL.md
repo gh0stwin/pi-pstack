@@ -50,7 +50,7 @@ Then run `pi list -l` and confirm `pi-pstack` resolves in project scope.
 
 ## 5. Ask for the configuration
 
-Ask for each value below and record it in a user-owned configuration file outside this pack, for example `.pi/benny/configuration.yaml`. Start from [`../templates/configuration.example.yaml`](../templates/configuration.example.yaml).
+Ask for each value below and record it in a user-owned configuration file outside this pack, for example `.pi/benny/configuration.yaml`. Start from [`../../templates/configuration.example.yaml`](../../templates/configuration.example.yaml).
 
 Required for both intakes:
 
@@ -109,15 +109,15 @@ The adapter must be able to search, read, create, update, and link issues, and t
 
 ## 8. Verify the verification skill
 
-Read [`../skills/reproduce-and-fix-issues/references/verification-adapter.md`](../skills/reproduce-and-fix-issues/references/verification-adapter.md) and the user's completed feature map.
+Read [`../reproduce-and-fix-issues/references/verification-adapter.md`](../reproduce-and-fix-issues/references/verification-adapter.md) and the user's completed feature map.
 
 The verification skill named in `verification.skill_name` must provide all seven capabilities: bring up, navigate, drive the real UI, inspect state read-only, capture screenshots, record video, and clean up. If the project has no such skill, offer once to generate one with `/skill:create-verification-skill`.
 
-Copy and fill [`../skills/reproduce-and-fix-issues/references/feature-map.example.md`](../skills/reproduce-and-fix-issues/references/feature-map.example.md) to `verification.feature_map_path`. Pack refreshes must not overwrite it.
+Copy and fill [`../reproduce-and-fix-issues/references/feature-map.example.md`](../reproduce-and-fix-issues/references/feature-map.example.md) to `verification.feature_map_path`. Pack refreshes must not overwrite it.
 
 ## 9. Prepare the routing map
 
-1. Copy [`../skills/triage-issue-reports/references/routing.example.md`](../skills/triage-issue-reports/references/routing.example.md) to `routing.map_path`.
+1. Copy [`../triage-issue-reports/references/routing.example.md`](../triage-issue-reports/references/routing.example.md) to `routing.map_path`.
 2. Fill in the destinations and the owner ping policy.
 3. Delete the example file from the pack copy. Keep only the filled map.
 
@@ -126,12 +126,12 @@ Copy and fill [`../skills/reproduce-and-fix-issues/references/feature-map.exampl
 pi has no automation editor. Benny runs as headless jobs. Pick the template pair that matches `intake.source`:
 
 1. Copy the pair that matches `intake.source` to `.github/workflows/`:
-   - Slack: [`../templates/benny-triage.yml`](../templates/benny-triage.yml), [`../templates/benny-reproduce.yml`](../templates/benny-reproduce.yml)
-   - GitHub: [`../templates/benny-github-triage.yml`](../templates/benny-github-triage.yml), [`../templates/benny-github-reproduce.yml`](../templates/benny-github-reproduce.yml)
-   - Webhook: [`../templates/benny-webhook-triage.yml`](../templates/benny-webhook-triage.yml), [`../templates/benny-webhook-reproduce.yml`](../templates/benny-webhook-reproduce.yml)
+   - Slack: [`../../templates/benny-triage.yml`](../../templates/benny-triage.yml), [`../../templates/benny-reproduce.yml`](../../templates/benny-reproduce.yml)
+   - GitHub: [`../../templates/benny-github-triage.yml`](../../templates/benny-github-triage.yml), [`../../templates/benny-github-reproduce.yml`](../../templates/benny-github-reproduce.yml)
+   - Webhook: [`../../templates/benny-webhook-triage.yml`](../../templates/benny-webhook-triage.yml), [`../../templates/benny-webhook-reproduce.yml`](../../templates/benny-webhook-reproduce.yml)
 2. Add the repository secrets each workflow names (`PI_PROVIDER_KEY` or the provider keys pi needs, plus `BENNY_SLACK_BOT_TOKEN` only for the Slack intake when the CLI uses it). The webhook adapter owns its own credentials; add them to the workflow step when the adapter commands need them.
 3. Confirm the workflow checks out the repository at `repository.default_branch` and that the operational files are committed there.
-4. For a local run, use [`../runner/benny-run.ts`](../runner/benny-run.ts):
+4. For a local run, use [`../../runner/benny-run.ts`](../../runner/benny-run.ts):
 
 ```bash
 # Slack intake
