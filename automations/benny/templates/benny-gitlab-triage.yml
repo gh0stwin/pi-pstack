@@ -40,7 +40,7 @@ concurrency:
 
 jobs:
   triage:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.client_payload.action != 'labeled' || github.event.client_payload.label.name == 'triage' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.client_payload.action == 'opened' || github.event.client_payload.action == 'reopened' || github.event.client_payload.label.name == 'triage' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
