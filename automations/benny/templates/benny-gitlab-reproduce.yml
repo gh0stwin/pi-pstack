@@ -63,18 +63,29 @@ jobs:
           PI_PROVIDER_KEY: ${{ secrets.PI_PROVIDER_KEY }}
           GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BENNY_INPUT_IID: ${{ inputs.iid }}
+          BENNY_INPUT_URL: ${{ inputs.url }}
+          BENNY_EVENT_IID: ${{ github.event.client_payload.issue.iid }}
+          BENNY_EVENT_URL: ${{ github.event.client_payload.issue.url }}
         run: |
           set -euo pipefail
-          if [ '${{ github.event_name }}' = 'workflow_dispatch' ]; then
-            iid='${{ inputs.iid }}'
-            url='${{ inputs.url }}'
-            event="{\"iid\":$iid,\"url\":\"$url\"}"
-          elif [ '${{ github.event_name }}' = 'repository_dispatch' ]; then
-            event="{\"iid\":${{ github.event.client_payload.issue.iid }},\"url\":\"${{ github.event.client_payload.issue.url }}\"}"
+          event=
+          if [ "$GITHUB_EVENT_NAME" = 'workflow_dispatch' ]; then
+            iid="$BENNY_INPUT_IID"
+            url="$BENNY_INPUT_URL"
+          elif [ "$GITHUB_EVENT_NAME" = 'repository_dispatch' ]; then
+            iid="$BENNY_EVENT_IID"
+            url="$BENNY_EVENT_URL"
           else
             # Scheduled sweep: let the skill pick the first triaged issue whose
             # trusted marker has no repro reply yet.
             event='{"sweep":true}'
+          fi
+          if [ -z "$event" ]; then
+            case "$iid" in
+              '' | *[!0-9]*) echo "benny: the GitLab issue iid must be a positive integer" >&2; exit 1 ;;
+            esac
+            event=$(printf '{"iid":%s,"url":"%s"}' "$iid" "$url")
           fi
           node .pi/automations/benny/runner/benny-run.ts \
             --mode reproduce \
