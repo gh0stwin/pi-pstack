@@ -136,9 +136,10 @@ pi has no automation editor. Benny runs as headless jobs. Pick the template pair
    - GitHub: [`../../templates/benny-github-triage.yml`](../../templates/benny-github-triage.yml), [`../../templates/benny-github-reproduce.yml`](../../templates/benny-github-reproduce.yml)
    - GitLab: [`../../templates/benny-gitlab-triage.yml`](../../templates/benny-gitlab-triage.yml), [`../../templates/benny-gitlab-reproduce.yml`](../../templates/benny-gitlab-reproduce.yml). The GitLab pair expects a relay that forwards GitLab issue webhooks as a `benny-gitlab-report` repository_dispatch; the template header documents the normalized payload.
    - Webhook: [`../../templates/benny-webhook-triage.yml`](../../templates/benny-webhook-triage.yml), [`../../templates/benny-webhook-reproduce.yml`](../../templates/benny-webhook-reproduce.yml)
-2. Add the repository secrets each workflow names (`PI_PROVIDER_KEY` or the provider keys pi needs, plus `BENNY_SLACK_BOT_TOKEN` only for the Slack intake when the CLI uses it). For the GitLab intake, add the token named by `gitlab.token_env` (the templates use `GITLAB_TOKEN`) to the repository secrets; the workflow passes it to the tracker adapter. The webhook adapter owns its own credentials; add them to the workflow step when the adapter commands need them.
-3. Confirm the workflow checks out the repository at `repository.default_branch` and that the operational files are committed there.
-4. For a local run, use [`../../runner/benny-run.ts`](../../runner/benny-run.ts):
+2. For the GitHub pair only, make each copied workflow's job-level `if:` guard match the configured label: replace `'triage'` in `.github/workflows/benny-github-triage.yml` with `tracker.labels.intake` and `'needs-repro'` in `.github/workflows/benny-github-reproduce.yml` with `tracker.labels.needs_repro` whenever the configured value is not the default. The guard cannot read `.pi/benny/configuration.yaml`, so a changed label that is not mirrored here silently stops the labeled-event trigger; the template headers repeat this requirement.
+3. Add the repository secrets each workflow names (`PI_PROVIDER_KEY` or the provider keys pi needs, plus `BENNY_SLACK_BOT_TOKEN` only for the Slack intake when the CLI uses it). For the GitLab intake, add the token named by `gitlab.token_env` (the templates use `GITLAB_TOKEN`) to the repository secrets; the workflow passes it to the tracker adapter. The webhook adapter owns its own credentials; add them to the workflow step when the adapter commands need them.
+4. Confirm the workflow checks out the repository at `repository.default_branch` and that the operational files are committed there.
+5. For a local run, use [`../../runner/benny-run.ts`](../../runner/benny-run.ts):
 
 ```bash
 # Slack intake

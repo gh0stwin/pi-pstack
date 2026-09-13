@@ -8,14 +8,16 @@
  * argument construction, concurrency, chain substitution, and result parsing
  * all run unchanged, so these tests pin what the skills actually call.
  */
-import { writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { validateToolArguments } from "@earendil-works/pi-ai";
 import { afterEach, expect, it } from "../../skills/poteto-mode/scripts/testing/expect.ts";
 import { DEFAULT_ROLES } from "./config.ts";
+import { getPiInvocation } from "./index.ts";
 import {
   cleanupTempDirs,
   ExtensionHarness,
+  FAKE_PI_PATH,
   firstStart,
   maxConcurrentChildren,
   subagentDetails,
@@ -50,6 +52,51 @@ it("registers the subagent and pstack_roles tools and the /pstack-models command
     Object.keys((pstackRoles.parameters as { properties?: Record<string, unknown> }).properties ?? {}),
   ).toEqual([]);
   expect(typeof harness.commands.get("pstack-models")?.handler).toBe("function");
+});
+
+it("resolves the child pi from PI_PSTACK_PI_BIN instead of process.argv[1]", () => {
+  const previous = process.env.PI_PSTACK_PI_BIN;
+  process.env.PI_PSTACK_PI_BIN = FAKE_PI_PATH;
+  try {
+    const invocation = getPiInvocation(["--mode", "json"]);
+    expect(invocation.command).toBe(process.execPath);
+    expect(invocation.args).toEqual([FAKE_PI_PATH, "--mode", "json"]);
+    expect(invocation.args[0]).not.toBe(process.argv[1]);
+  } finally {
+    if (previous === undefined) delete process.env.PI_PSTACK_PI_BIN;
+    else process.env.PI_PSTACK_PI_BIN = previous;
+  }
+});
+
+it("resolves the installed pi CLI entry from the extension's own import chain", () => {
+  const previous = process.env.PI_PSTACK_PI_BIN;
+  delete process.env.PI_PSTACK_PI_BIN;
+  try {
+    const invocation = getPiInvocation([]);
+    const entry = invocation.args[0];
+    expect(entry).toBeDefined();
+    expect(existsSync(entry as string)).toBe(true);
+    expect(entry).not.toBe(process.argv[1]);
+  } finally {
+    if (previous === undefined) delete process.env.PI_PSTACK_PI_BIN;
+    else process.env.PI_PSTACK_PI_BIN = previous;
+  }
+});
+
+it("refuses a PI_PSTACK_PI_BIN that names the current host process", () => {
+  const previous = process.env.PI_PSTACK_PI_BIN;
+  const host = process.argv[1];
+  process.env.PI_PSTACK_PI_BIN = host;
+  try {
+    const invocation = getPiInvocation([]);
+    // The self-spawn candidate is skipped and resolution continues with the
+    // import-chain pi entry (or `pi` on PATH when that cannot be resolved).
+    expect(invocation.args[0]).not.toBe(host);
+    if (invocation.args.length > 0) expect(existsSync(invocation.args[0])).toBe(true);
+  } finally {
+    if (previous === undefined) delete process.env.PI_PSTACK_PI_BIN;
+    else process.env.PI_PSTACK_PI_BIN = previous;
+  }
 });
 
 it("spawns one isolated child with the agent prompt, task, and parent model", async () => {

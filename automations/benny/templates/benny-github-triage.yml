@@ -1,13 +1,17 @@
 # Benny triage for the GitHub intake. Copy to
 # .github/workflows/benny-github-triage.yml in the target repository and adjust
-# the label and the pi install step.
+# the guard label below and the pi install step.
 #
 # Use this pair instead of benny-triage.yml / benny-reproduce.yml when the
 # configuration sets `intake.source: github`. No Slack CLI or token is needed.
 #
-# The intake label defaults to `tracker.labels.intake` ("triage"). A new or
-# reopened issue is triaged as it arrives; a labeled issue is triaged only when
-# the event's newly added label is the intake label.
+# The intake label is `tracker.labels.intake` in the configuration. The
+# job-level `if:` guard below is the only place this workflow declares it, and
+# a guard cannot read the configuration, so the literal MUST be changed to the
+# configured label when it is not "triage" (setup-benny step 10). A mismatch
+# silently stops the labeled-event trigger. A new or reopened issue is triaged
+# as it arrives; a labeled issue is triaged only when the event's newly added
+# label is the intake label.
 name: benny-github-triage
 
 on:
@@ -25,6 +29,7 @@ concurrency:
 
 jobs:
   triage:
+    # Must equal `tracker.labels.intake` in .pi/benny/configuration.yaml.
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.action != 'labeled' || github.event.label.name == 'triage' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45

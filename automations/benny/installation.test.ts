@@ -360,13 +360,29 @@ it("ships webhook-intake workflows that pass the event binding and carry no Slac
   }
 });
 
+/** `tracker.labels` from the example configuration, as plain strings. */
+function exampleTrackerLabels(): Record<string, string> {
+  const config = parseYaml(
+    readFileSync(join(packageRoot, "automations", "benny", "templates", "configuration.example.yaml"), "utf8"),
+  );
+  const labels = asRecord(asRecord(config, "tracker"), "labels");
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(labels)) result[key] = String(value);
+  return result;
+}
+
 it("ships GitHub-intake workflows that drive the runner with the no-Slack event, guard, and env", () => {
+  const configured = exampleTrackerLabels();
   const cases = [
-    { file: "benny-github-triage.yml", mode: "triage", intakeLabel: "triage", types: ["opened", "reopened", "labeled"] },
-    { file: "benny-github-reproduce.yml", mode: "reproduce", intakeLabel: "needs-repro", types: ["labeled"] },
+    { file: "benny-github-triage.yml", mode: "triage", labelKey: "intake", types: ["opened", "reopened", "labeled"] },
+    { file: "benny-github-reproduce.yml", mode: "reproduce", labelKey: "needs_repro", types: ["labeled"] },
   ];
 
-  for (const { file, mode, intakeLabel, types } of cases) {
+  for (const { file, mode, labelKey, types } of cases) {
+    // The guard literal must be the configured default label: a drift between
+    // tracker.labels.* and the copied workflow silently stops the trigger.
+    const intakeLabel = configured[labelKey];
+    expect(typeof intakeLabel).toBe("string");
     const workflow = parseYaml(readFileSync(join(packageRoot, "automations", "benny", "templates", file), "utf8"));
 
     const issueTriggers = asRecord(asRecord(workflow, "on"), "issues");
