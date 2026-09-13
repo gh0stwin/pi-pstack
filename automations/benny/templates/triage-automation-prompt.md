@@ -16,7 +16,7 @@ The runner passes this binding, one line per field:
 
 ```text
 Intake binding:
-- intake: <slack | github | webhook>
+- intake: <slack | github | gitlab | webhook>
 - source item: <the report being triaged>
 - source thread: <the conversation around it>
 - verdict location: <the single place the one verdict goes>
@@ -47,6 +47,17 @@ Event, GitHub intake (`intake.source: github`):
 	"url": "https://github.com/owner/repo/issues/123"
 }
 ```
+
+Event, GitLab intake (`intake.source: gitlab`):
+
+```json
+{
+	"iid": 42,
+	"url": "https://gitlab.com/group/project/-/issues/42"
+}
+```
+
+The GitLab runner requires `iid` and fails closed when the URL names a different issue or a project other than `gitlab.project`.
 
 Event, webhook/CLI intake (`intake.source: webhook`):
 

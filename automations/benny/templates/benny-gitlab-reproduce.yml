@@ -1,0 +1,82 @@
+# Benny reproduce-and-fix for the GitLab intake. Copy to
+# .github/workflows/benny-gitlab-reproduce.yml in the target repository and
+# adjust the label and the pi install step.
+#
+# Use this pair instead of benny-triage.yml / benny-reproduce.yml when the
+# configuration sets `intake.source: gitlab`. The reports are GitLab issues and
+# the verdict is one comment on the issue through the GitLab tracker adapter.
+# No Slack CLI or token is needed; the GitLab webhook relay is the same one
+# benny-gitlab-triage.yml documents.
+#
+# The reproduce label defaults to `tracker.labels.needs_repro` ("needs-repro").
+# The schedule sweeps for the oldest triaged issue with no repro reply yet; a
+# labeled issue or a manual dispatch runs one issue immediately, and only when
+# the event's newly added label is the reproduce label, so a later label change
+# cannot re-trigger and duplicate the verdict.
+#
+# Keep `draft_only: true` in the configuration. This workflow never merges.
+name: benny-gitlab-reproduce
+
+on:
+  repository_dispatch:
+    types: [benny-gitlab-report]
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+    inputs:
+      iid:
+        description: GitLab issue iid to reproduce
+        required: true
+      url:
+        description: GitLab issue URL
+        required: true
+
+concurrency:
+  group: benny-reproduce
+  cancel-in-progress: false
+
+jobs:
+  reproduce:
+    if: ${{ github.event_name != 'repository_dispatch' || github.event.client_payload.label.name == 'needs-repro' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install pi
+        run: npm install -g --ignore-scripts @earendil-works/pi-coding-agent
+
+      - name: Install project packages
+        run: pi install -l git:github.com/gh0stwin/pi-pstack
+
+      - name: Reproduce and fix
+        env:
+          PI_PROVIDER_KEY: ${{ secrets.PI_PROVIDER_KEY }}
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ '${{ github.event_name }}' = 'workflow_dispatch' ]; then
+            iid='${{ inputs.iid }}'
+            url='${{ inputs.url }}'
+            event="{\"iid\":$iid,\"url\":\"$url\"}"
+          elif [ '${{ github.event_name }}' = 'repository_dispatch' ]; then
+            event="{\"iid\":${{ github.event.client_payload.issue.iid }},\"url\":\"${{ github.event.client_payload.issue.url }}\"}"
+          else
+            # Scheduled sweep: let the skill pick the first triaged issue whose
+            # trusted marker has no repro reply yet.
+            event='{"sweep":true}'
+          fi
+          node .pi/automations/benny/runner/benny-run.ts \
+            --mode reproduce \
+            --config .pi/benny/configuration.yaml \
+            --event "$event"

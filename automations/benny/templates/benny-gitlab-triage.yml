@@ -1,0 +1,77 @@
+# Benny triage for the GitLab intake. Copy to
+# .github/workflows/benny-gitlab-triage.yml in the target repository and adjust
+# the label and the pi install step.
+#
+# Use this pair instead of benny-triage.yml / benny-reproduce.yml when the
+# configuration sets `intake.source: gitlab`. The reports are GitLab issues and
+# the verdict is one comment on the issue through the GitLab tracker adapter.
+# No Slack CLI or token is needed.
+#
+# GitLab issue webhooks cannot reach GitHub Actions directly, so a relay
+# forwards each issue event as a `benny-gitlab-report` repository_dispatch with
+# this normalized payload:
+#
+#   { "action": "opened" | "reopened" | "labeled",
+#     "issue": { "iid": 42, "url": "https://gitlab.com/group/project/-/issues/42" },
+#     "label": { "name": "triage" } }
+#
+# `label` is the newly added label and is present only for a labeled action.
+# The intake label defaults to `tracker.labels.intake` ("triage"). A new or
+# reopened issue is triaged as it arrives; a labeled issue is triaged only when
+# the event's newly added label is the intake label, so a later label change
+# cannot re-trigger and duplicate the verdict.
+name: benny-gitlab-triage
+
+on:
+  repository_dispatch:
+    types: [benny-gitlab-report]
+  workflow_dispatch:
+    inputs:
+      iid:
+        description: GitLab issue iid to triage
+        required: true
+      url:
+        description: GitLab issue URL
+        required: true
+
+concurrency:
+  group: benny-triage-${{ github.event.client_payload.issue.iid || inputs.iid }}
+  cancel-in-progress: false
+
+jobs:
+  triage:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.client_payload.action == 'opened' || github.event.client_payload.action == 'reopened' || github.event.client_payload.label.name == 'triage' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install pi
+        run: npm install -g --ignore-scripts @earendil-works/pi-coding-agent
+
+      - name: Install project packages
+        run: pi install -l git:github.com/gh0stwin/pi-pstack
+
+      - name: Triage the issue
+        env:
+          PI_PROVIDER_KEY: ${{ secrets.PI_PROVIDER_KEY }}
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ '${{ github.event_name }}' = 'workflow_dispatch' ]; then
+            iid='${{ inputs.iid }}'
+            url='${{ inputs.url }}'
+          else
+            iid='${{ github.event.client_payload.issue.iid }}'
+            url='${{ github.event.client_payload.issue.url }}'
+          fi
+          node .pi/automations/benny/runner/benny-run.ts \
+            --mode triage \
+            --config .pi/benny/configuration.yaml \
+            --event "{\"iid\":$iid,\"url\":\"$url\"}"

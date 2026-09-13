@@ -9,7 +9,7 @@ The human enters setup by pointing pi at the pack's `FOR_AGENTS.md`, or by runni
 
 Benny needs external configuration, an intake source, and two headless pi runs. pi has no hosted automations, so the runs are GitHub Actions workflows (`templates/*.yml`) or the local runner (`runner/benny-run.ts`). Both invoke `pi -p`.
 
-Benny takes reports from Slack, GitHub issues / the CLI, or any source that can build an intake binding (the generic webhook/CLI intake). Slack is one option, not a requirement: a user who does not use Slack sets `intake.source: github` or `intake.source: webhook` and never provides a Slack CLI or token.
+Benny takes reports from Slack, GitHub issues / the CLI, GitLab issues, or any source that can build an intake binding (the generic webhook/CLI intake). Slack is one option, not a requirement: a user who does not use Slack sets `intake.source: github`, `intake.source: gitlab`, or `intake.source: webhook` and never provides a Slack CLI or token.
 
 Every run receives one intake binding: the source item, the source thread, the single verdict location, and the adapter that reads and posts. The operational files are written in those terms, and [`../../references/intake-binding.md`](../../references/intake-binding.md) is the contract behind them.
 
@@ -21,9 +21,10 @@ Ask which intake the user wants and record it as `intake.source` in the configur
 
 - **Slack** (default): reports arrive as messages in a source channel and Benny replies in the source thread through a repository-provided Slack CLI. Steps 6 and 11's Slack checks apply.
 - **GitHub issues / CLI**: reports arrive as issues or as `benny-run.ts --event` invocations. Benny posts the verdict as an issue comment through the tracker adapter. No Slack CLI, no Slack token, and no `slack:` section in the config.
+- **GitLab issues / CLI**: reports arrive as GitLab issues or as `benny-run.ts --event` invocations naming the issue `iid` and URL. Benny posts the verdict as exactly one comment on the issue through the GitLab tracker adapter. Set `gitlab.project` and `gitlab.token_env`; no Slack CLI, no Slack token, and no `slack:` section in the config.
 - **Webhook / CLI**: reports arrive from any source that can hand the runner a binding: a source item, a source thread, a verdict location, and the adapter read and post commands. The binding travels in the event, so this intake needs no Slack values and no intake section beyond `intake.source: webhook`.
 
-If the user does not use Slack or does not want to incorporate it, choose the GitHub or webhook intake and continue without Slack. Do not block setup on a missing Slack CLI for that choice.
+If the user does not use Slack or does not want to incorporate it, choose the GitHub, GitLab, or webhook intake and continue without Slack. Do not block setup on a missing Slack CLI for that choice.
 
 ## 2. Choose the target repository
 
@@ -54,7 +55,7 @@ Ask for each value below and record it in a user-owned configuration file outsid
 
 Required for every intake:
 
-- Intake source (`slack`, `github`, or `webhook`)
+- Intake source (`slack`, `github`, `gitlab`, or `webhook`)
 - Repository URL and default branch
 - Tracker adapter and its target fields
 - Verification skill name and completed feature-map path
@@ -72,6 +73,11 @@ Required for the webhook intake only:
 
 - The binding each source sends: source item, source thread, verdict location, and the adapter read and post commands. Record the shape in the source's own documentation; the runner validates it per event.
 
+Required for the GitLab intake only:
+
+- GitLab project path (`gitlab.project`), for example `group/project`
+- The name of the environment variable that holds the GitLab token (`gitlab.token_env`), for example `GITLAB_TOKEN`. The token itself stays in the environment or a secret manager, never in YAML and never in the repository.
+
 Optional:
 
 - Operations channel id (Slack intake)
@@ -80,11 +86,11 @@ Optional:
 
 Use only model ids that `pi --list-models` reports, or `inherit-parent` / `auto`. Do not guess an id and do not carry over a private default.
 
-For `intake.source: slack`, the source channel, triage identity, Slack CLI, repository, tracker adapter, verification skill, and feature map must be explicit. For `intake.source: github`, the Slack values are not asked for and their absence is not an error; the repository, tracker adapter, verification skill, and feature map must be explicit. For `intake.source: webhook`, only the repository, tracker adapter, verification skill, and feature map are asked for; the event carries the rest. Fail setup if a required value stays ambiguous.
+For `intake.source: slack`, the source channel, triage identity, Slack CLI, repository, tracker adapter, verification skill, and feature map must be explicit. For `intake.source: github`, the Slack values are not asked for and their absence is not an error; the repository, tracker adapter, verification skill, and feature map must be explicit. For `intake.source: gitlab`, the Slack values are not asked for and their absence is not an error; the GitLab project and token environment, tracker adapter, verification skill, and feature map must be explicit. For `intake.source: webhook`, only the repository, tracker adapter, verification skill, and feature map are asked for; the event carries the rest. Fail setup if a required value stays ambiguous.
 
 ## 6. Provide the Slack CLI (Slack intake only)
 
-Skip this step when `intake.source` is `github` or `webhook`; a no-Slack install has no CLI contract to satisfy.
+Skip this step when `intake.source` is `github`, `gitlab`, or `webhook`; a no-Slack install has no CLI contract to satisfy.
 
 pi has no Slack integration, so Benny reads and posts through a CLI the repository provides. Set its name in `slack.cli`. It must implement:
 
@@ -99,13 +105,13 @@ pi has no Slack integration, so Benny reads and posts through a CLI the reposito
 
 The CLI owns the token. Keep the token in a secret manager or the environment, never in YAML, never in the repository, and never in a worker's environment.
 
-If the user wants the Slack intake and the repository has no such CLI, stop and tell the user Benny cannot post. Do not substitute a browser session or a personal token. If the user does not use Slack, switch to `intake.source: github` or `intake.source: webhook` instead of building a CLI.
+If the user wants the Slack intake and the repository has no such CLI, stop and tell the user Benny cannot post. Do not substitute a browser session or a personal token. If the user does not use Slack, switch to `intake.source: github`, `intake.source: gitlab`, or `intake.source: webhook` instead of building a CLI.
 
 ## 7. Prepare the tracker adapter
 
-The tracker is an adapter, not a required vendor. `gh issue` is the reference adapter for GitHub Issues; a Linear, Jira, or other adapter may implement the same contract. Record the adapter command in `tracker.adapter`.
+The tracker is an adapter, not a required vendor. `gh issue` is the reference adapter for GitHub Issues, `glab issue` for GitLab, and a Linear, Jira, or other adapter may implement the same contract. Record the adapter command in `tracker.adapter`.
 
-The adapter must be able to search, read, create, update, and link issues, and to cancel an issue this run created when the source handoff fails. For the GitHub intake it also carries the verdict: the run posts one issue comment on the source issue instead of a Slack thread reply. `tracker.adapter` is required for that intake, and the runner fails closed without it.
+The adapter must be able to search, read, create, update, and link issues, and to cancel an issue this run created when the source handoff fails. For the GitHub and GitLab intakes it also carries the verdict: the run posts one issue comment on the source issue instead of a Slack thread reply. `tracker.adapter` is required for those intakes, and the runner fails closed without it.
 
 ## 8. Verify the verification skill
 
@@ -128,8 +134,9 @@ pi has no automation editor. Benny runs as headless jobs. Pick the template pair
 1. Copy the pair that matches `intake.source` to `.github/workflows/`:
    - Slack: [`../../templates/benny-triage.yml`](../../templates/benny-triage.yml), [`../../templates/benny-reproduce.yml`](../../templates/benny-reproduce.yml)
    - GitHub: [`../../templates/benny-github-triage.yml`](../../templates/benny-github-triage.yml), [`../../templates/benny-github-reproduce.yml`](../../templates/benny-github-reproduce.yml)
+   - GitLab: [`../../templates/benny-gitlab-triage.yml`](../../templates/benny-gitlab-triage.yml), [`../../templates/benny-gitlab-reproduce.yml`](../../templates/benny-gitlab-reproduce.yml). The GitLab pair expects a relay that forwards GitLab issue webhooks as a `benny-gitlab-report` repository_dispatch; the template header documents the normalized payload.
    - Webhook: [`../../templates/benny-webhook-triage.yml`](../../templates/benny-webhook-triage.yml), [`../../templates/benny-webhook-reproduce.yml`](../../templates/benny-webhook-reproduce.yml)
-2. Add the repository secrets each workflow names (`PI_PROVIDER_KEY` or the provider keys pi needs, plus `BENNY_SLACK_BOT_TOKEN` only for the Slack intake when the CLI uses it). The webhook adapter owns its own credentials; add them to the workflow step when the adapter commands need them.
+2. Add the repository secrets each workflow names (`PI_PROVIDER_KEY` or the provider keys pi needs, plus `BENNY_SLACK_BOT_TOKEN` only for the Slack intake when the CLI uses it). For the GitLab intake, add the token named by `gitlab.token_env` (the templates use `GITLAB_TOKEN`) to the repository secrets; the workflow passes it to the tracker adapter. The webhook adapter owns its own credentials; add them to the workflow step when the adapter commands need them.
 3. Confirm the workflow checks out the repository at `repository.default_branch` and that the operational files are committed there.
 4. For a local run, use [`../../runner/benny-run.ts`](../../runner/benny-run.ts):
 
@@ -145,6 +152,12 @@ node .pi/automations/benny/runner/benny-run.ts \
   --mode triage \
   --config .pi/benny/configuration.yaml \
   --event '{"issue":123,"url":"https://github.com/owner/repo/issues/123"}'
+
+# GitLab intake
+node .pi/automations/benny/runner/benny-run.ts \
+  --mode triage \
+  --config .pi/benny/configuration.yaml \
+  --event '{"iid":42,"url":"https://gitlab.com/group/project/-/issues/42"}'
 
 # Webhook/CLI intake
 node .pi/automations/benny/runner/benny-run.ts \
@@ -175,7 +188,7 @@ Slack intake only, in addition:
 
 5. `<cli> thread <source channel> <a known ts>` returns the root and its replies.
 
-For the GitHub and webhook intakes, also run the runner with `--dry-run` against a real event and confirm it prints the `pi -p` command:
+For the GitHub, GitLab, and webhook intakes, also run the runner with `--dry-run` against a real event and confirm it prints the `pi -p` command:
 
 ```bash
 # GitHub intake
@@ -183,6 +196,13 @@ node .pi/automations/benny/runner/benny-run.ts \
   --mode triage \
   --config .pi/benny/configuration.yaml \
   --event '{"issue":123,"url":"https://github.com/owner/repo/issues/123"}' \
+  --dry-run
+
+# GitLab intake
+node .pi/automations/benny/runner/benny-run.ts \
+  --mode triage \
+  --config .pi/benny/configuration.yaml \
+  --event '{"iid":42,"url":"https://gitlab.com/group/project/-/issues/42"}' \
   --dry-run
 
 # Webhook/CLI intake
@@ -211,6 +231,14 @@ GitHub intake: open a test issue and confirm:
 - Exactly one verdict comment lands on the issue.
 - The verdict carries exactly one marker.
 - No new issue is opened for the verdict.
+- The reproduce workflow either waits for the marker or stops cleanly on `[benny:other]`.
+
+GitLab intake: open a test issue and confirm:
+
+- Exactly one verdict comment lands on the issue.
+- The verdict carries exactly one marker.
+- No new issue is opened for the verdict.
+- A missing `iid`, an `iid` and URL that disagree, or a URL from another project stops the runner before `pi` starts.
 - The reproduce workflow either waits for the marker or stops cleanly on `[benny:other]`.
 
 Webhook intake: send one harmless binding through the source and confirm:

@@ -2,17 +2,17 @@
 
 ## what i want to run
 
-i want two headless pi jobs that work together on one report source. i choose the source once: a slack channel, github issues / the cli, or any source that can hand the runner an intake binding (the generic webhook/cli intake). slack is optional; if i do not use slack i do not want to install or configure it.
+i want two headless pi jobs that work together on one report source. i choose the source once: a slack channel, github or gitlab issues / the cli, or any source that can hand the runner an intake binding (the generic webhook/cli intake). slack is optional; if i do not use slack i do not want to install or configure it.
 
 every run receives one intake binding: the source item, the source thread, the single verdict location, and the adapter that reads and posts. i want the operational files written in those terms, so a new source is configuration rather than a rewrite.
 
 ### run 1: triage issue reports
 
-- trigger: when a new top-level report arrives in my configured source (a new message in the slack channel, a new github issue / a `benny-run.ts --event` invocation, or a webhook/cli binding), i want this run to start on that report and keep its original coordinates.
+- trigger: when a new top-level report arrives in my configured source (a new message in the slack channel, a new github or gitlab issue / a `benny-run.ts --event` invocation, or a webhook/cli binding), i want this run to start on that report and keep its original coordinates.
 - behavior: i want it to read the report and attachments, classify it as a bug or performance issue, feature request, question or feedback, or reroute, and trace the likely owning layer before routing.
 - tracker: i want it to search my configured tracker for duplicates, update a confident duplicate, and create a ticket only for a clear net-new bug.
-- tools: for the slack intake, slack thread read and reply access through the configured slack cli; for the github intake, the issue named by the event and the tracker adapter; for the webhook intake, the adapter commands in the binding. my configured tracker adapter and my optional routing map in every case.
-- outcome: i want exactly one verdict where the report lives: the binding's verdict location. a reply in the source thread for slack, one comment on the source issue for github, and a reply or comment through the adapter the webhook binding names. the verdict carries `[benny:bug]`, `[benny:performance]`, or `[benny:other]`. a bug or performance marker may include the tracker url.
+- tools: for the slack intake, slack thread read and reply access through the configured slack cli; for the github and gitlab intakes, the issue named by the event and the tracker adapter; for the webhook intake, the adapter commands in the binding. my configured tracker adapter and my optional routing map in every case.
+- outcome: i want exactly one verdict where the report lives: the binding's verdict location. a reply in the source thread for slack, one comment on the source issue for github and gitlab, and a reply or comment through the adapter the webhook binding names. the verdict carries `[benny:bug]`, `[benny:performance]`, or `[benny:other]`. a bug or performance marker may include the tracker url.
 - boundary: i never want this run to open a new top-level post for the report: no slack source-channel root message, no new issue, no new email thread.
 
 ### run 2: reproduce and fix confirmed bugs
@@ -40,12 +40,13 @@ every run receives one intake binding: the source item, the source thread, the s
 
 ### my configuration
 
-- intake source: `slack`, `github`, or `webhook`
+- intake source: `slack`, `github`, `gitlab`, or `webhook`
 - source slack channel: `<channel>` (slack intake only)
 - optional operations channel: `<channel or none>` (slack intake only)
 - slack cli: `<command>` (slack intake only)
+- gitlab project and token environment: `<project path>`, `<token env var>` (gitlab intake only)
 - webhook binding: `<source item, source thread, verdict location, adapter read and post commands>` (webhook intake only)
-- triage identity: `<slack user id for slack; tracker identity for github; adapter identity for webhook>`
+- triage identity: `<slack user id for slack; tracker identity for github and gitlab; adapter identity for webhook>`
 - repository and default branch: `<repo>`, `<branch>`
 - tracker: `<type, adapter command, team, project, labels, intake status>`
 - routing map: `<path or none>`
@@ -63,7 +64,7 @@ start from [`configuration.example.yaml`](./templates/configuration.example.yaml
 the human enters setup by pointing pi at this file. do not look for or invoke a discovered benny skill.
 
 1. ask which repository will run the runs.
-2. ask which intake the human wants: `slack`, `github`, or `webhook`. a human who does not use slack chooses `github` or `webhook` and is never asked for a slack cli or token. a human with a source that can build the binding chooses `webhook` and provides the adapter commands with each event.
+2. ask which intake the human wants: `slack`, `github`, `gitlab`, or `webhook`. a human who does not use slack chooses `github`, `gitlab`, or `webhook` and is never asked for a slack cli or token. a human with a source that can build the binding chooses `webhook` and provides the adapter commands with each event. a human whose reports live in gitlab issues chooses `gitlab` and provides the project path and the token environment variable name.
 3. treat the directory containing this `FOR_AGENTS.md` as the source pack.
 4. merge the entire source pack into `<target-repository>/.pi/automations/benny/`.
 5. preserve every destination-only file. never delete unrelated files or overwrite user-owned configuration, feature maps, or routing maps.
@@ -83,6 +84,7 @@ pi has no automation editor and no hosted automation product. i want the two run
 
 - slack intake: copy `templates/benny-triage.yml` and `templates/benny-reproduce.yml` to `.github/workflows/`.
 - github intake: copy `templates/benny-github-triage.yml` and `templates/benny-github-reproduce.yml` to `.github/workflows/`.
+- gitlab intake: copy `templates/benny-gitlab-triage.yml` and `templates/benny-gitlab-reproduce.yml` to `.github/workflows/`.
 - webhook intake: copy `templates/benny-webhook-triage.yml` and `templates/benny-webhook-reproduce.yml` to `.github/workflows/`.
 - or run `runner/benny-run.ts` directly from any trigger.
 - keep the provider key in repository secrets, and the slack token there too only when the slack intake uses one.

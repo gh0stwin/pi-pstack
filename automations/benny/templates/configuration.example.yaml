@@ -7,14 +7,16 @@ runs:
 
 # How reports reach Benny. `slack` needs the Slack section below; `github`
 # reads issues from the configured repository through the tracker adapter and
-# needs no Slack setup. `webhook` takes the whole binding from the event
-# (`source_item`, `source_thread`, `verdict_location`, `adapter.read`,
-# `adapter.post`) and needs no section either. A user who does not use Slack
-# deletes the whole slack section and sets source to "github" or "webhook".
+# needs no Slack setup. `gitlab` reads issues from the configured GitLab
+# project through the tracker adapter and also needs no Slack setup. `webhook`
+# takes the whole binding from the event (`source_item`, `source_thread`,
+# `verdict_location`, `adapter.read`, `adapter.post`) and needs no section
+# either. A user who does not use Slack deletes the whole slack section and
+# sets source to "github", "gitlab", or "webhook".
 intake:
-  source: "slack" # slack | github | webhook
+  source: "slack" # slack | github | gitlab | webhook
 
-# Slack intake only. Delete this whole section for intake.source: github or webhook.
+# Slack intake only. Delete this whole section for intake.source: github, gitlab, or webhook.
 # Benny has no built-in Slack integration. Point `cli` at the wrapper the
 # repository provides; it must implement the contract in
 # skills/setup-benny/SKILL.md.
@@ -27,6 +29,15 @@ slack:
   allow_source_root_posts: false
   allow_worker_slack_writes: false
 
+# GitLab intake only. Set `intake.source: "gitlab"` and point `tracker.adapter`
+# at the GitLab client (`glab issue`). `project` is the project path and
+# `token_env` names the environment variable that holds the token; never put
+# the token value in this file. The run event names the issue and must agree
+# with the project (`{"iid":42,"url":"https://gitlab.com/group/project/-/issues/42"}`).
+# gitlab:
+#   project: "group/project"
+#   token_env: "GITLAB_TOKEN"
+
 repository:
   url: "https://github.com/example-org/example-repo"
   default_branch: "main"
@@ -34,10 +45,11 @@ repository:
   pull_request_url_format: "https://github.com/{owner}/{repo}/pull/{number}"
   draft_only: true
 
-# The GitHub intake reads the issue named by the run event
-# (`{"issue":123,"url":"https://github.com/owner/repo/issues/123"}`) and
-# posts the verdict as an issue comment through the tracker adapter below.
-# `tracker.adapter` is required for this intake: it reads the issue and posts
+# The GitHub and GitLab intakes read the issue named by the run event
+# (`{"issue":123,"url":"https://github.com/owner/repo/issues/123"}` or
+# `{"iid":42,"url":"https://gitlab.com/group/project/-/issues/42"}`) and post
+# the verdict as an issue comment through the tracker adapter below.
+# `tracker.adapter` is required for those intakes: it reads the issue and posts
 # the verdict comment.
 #
 # The webhook intake takes its binding from the event instead of the config:

@@ -278,6 +278,38 @@ function asRecord(value: YamlValue, key: string): Record<string, YamlValue> {
   return nested as Record<string, YamlValue>;
 }
 
+/** The JSON event literals a workflow run step assigns to its `event` shell variable. */
+function assignedEventLiterals(run: string): string[] {
+  const literals: string[] = [];
+  for (const line of run.split("\n")) {
+    const match = /^\s*event=(?:"(.*)"|'(.*)')\s*$/.exec(line);
+    if (match === null) continue;
+    literals.push(match[1] ?? match[2] ?? "");
+  }
+  return literals;
+}
+
+/**
+ * Resolve a shell-quoted event literal into the JSON the workflow builds:
+ * unescape the quotes and stand in for the iid/url variables or expressions.
+ * Returns undefined when the result is not a JSON object.
+ */
+function resolvedEventLiteral(literal: string): Record<string, unknown> | undefined {
+  const substituted = literal
+    .replace(/\\"/g, '"')
+    .replace(/\$\{\{[^}]*\}\}/g, "1")
+    .replace(/\$iid\b/g, "1")
+    .replace(/\$url\b/g, "https://gitlab.com/group/project/-/issues/1");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(substituted);
+  } catch {
+    return undefined;
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return undefined;
+  return parsed as Record<string, unknown>;
+}
+
 it("ships webhook-intake workflows that pass the event binding and carry no Slack values", () => {
   const cases = [
     { file: "benny-webhook-triage.yml", mode: "triage", types: ["benny-report"] },
@@ -361,5 +393,105 @@ it("ships GitHub-intake workflows that drive the runner with the no-Slack event,
     const modeIndex = invocation.indexOf("--mode");
     expect(modeIndex >= 0).toBe(true);
     expect(invocation[modeIndex + 1]).toBe(mode);
+  }
+});
+
+it("ships GitLab-intake workflows that drive the runner with the GitLab event, newly-added-label guard, and env", () => {
+  const cases = [
+    {
+      file: "benny-gitlab-triage.yml",
+      mode: "triage",
+      intakeLabel: "triage",
+      manualBypass: "github.event_name == 'workflow_dispatch'",
+      allowedActions: ["opened", "reopened"],
+      sweeps: false,
+    },
+    {
+      file: "benny-gitlab-reproduce.yml",
+      mode: "reproduce",
+      intakeLabel: "needs-repro",
+      manualBypass: "github.event_name != 'repository_dispatch'",
+      allowedActions: [],
+      sweeps: true,
+    },
+  ];
+
+  for (const { file, mode, intakeLabel, manualBypass, allowedActions, sweeps } of cases) {
+    const workflow = parseYaml(readFileSync(join(packageRoot, "automations", "benny", "templates", file), "utf8"));
+
+    const triggers = asRecord(workflow, "on");
+    const dispatch = asRecord(triggers, "repository_dispatch");
+    expect(dispatch.types).toEqual(["benny-gitlab-report"]);
+
+    const manual = asRecord(triggers, "workflow_dispatch");
+    const inputs = asRecord(manual, "inputs");
+    expect(inputs.iid).toBeDefined();
+    expect(inputs.url).toBeDefined();
+    expect(triggers.schedule !== undefined).toBe(sweeps);
+
+    const job = asRecord(workflow, "jobs");
+    const jobName = Object.keys(job)[0];
+    const body = asRecord(job, jobName);
+
+    // The guard must fire on the event's newly added label, never on the issue's
+    // label list, so a later label change cannot re-trigger the run. Actions
+    // other than the explicit allowlist are ignored, never treated as triage.
+    const guard = String(body.if);
+    expect(guard).toContain(manualBypass);
+    expect(guard).toContain(`github.event.client_payload.label.name == '${intakeLabel}'`);
+    for (const action of allowedActions) {
+      expect(guard).toContain(`github.event.client_payload.action == '${action}'`);
+    }
+    expect(guard).not.toContain("github.event.client_payload.action !=");
+    expect(guard).not.toContain("client_payload.issue.labels");
+    expect(guard).not.toContain("github.event.issue.labels.*.name");
+
+    const steps = body.steps;
+    expect(Array.isArray(steps)).toBe(true);
+    const step = (steps as YamlValue[]).find((entry) => {
+      const run = (entry as Record<string, YamlValue>).run;
+      return typeof run === "string" && runnerInvocation(run) !== undefined;
+    });
+    const runRecord = step as Record<string, YamlValue>;
+
+    const env = runRecord.env as Record<string, YamlValue>;
+    expect(env.PI_PROVIDER_KEY).toBeDefined();
+    expect(env.GITLAB_TOKEN).toBeDefined();
+    expect(env.BENNY_SLACK_BOT_TOKEN).toBeUndefined();
+
+    const tokens = runnerInvocation(String(runRecord.run));
+    expect(tokens).toBeDefined();
+    const invocation = tokens as string[];
+    expect(invocation).toContain(".pi/automations/benny/runner/benny-run.ts");
+    expect(invocation).toContain("--config");
+    expect(invocation).toContain("--event");
+    const modeIndex = invocation.indexOf("--mode");
+    expect(modeIndex >= 0).toBe(true);
+    expect(invocation[modeIndex + 1]).toBe(mode);
+
+    // The run step constructs the JSON runner event from the GitLab iid and
+    // URL: the triage step passes it inline, the reproduce step builds it into
+    // `event` across branches and keeps the scheduled sweep. Parse every
+    // constructed literal so a wrong field name fails the test.
+    const eventArg = invocation[invocation.indexOf("--event") + 1];
+    const inlineEvent = resolvedEventLiteral(eventArg);
+
+    if (mode === "triage") {
+      expect(inlineEvent).toBeDefined();
+      expect((inlineEvent ?? {}).iid).toBeDefined();
+      expect((inlineEvent ?? {}).url).toBeDefined();
+    } else {
+      const assignedLiterals = assignedEventLiterals(String(runRecord.run));
+      expect(assignedLiterals.length > 0).toBe(true);
+      const assignedEvents = assignedLiterals.map(resolvedEventLiteral);
+      for (const event of assignedEvents) {
+        expect(event).toBeDefined();
+        const isReport = event?.iid !== undefined && event?.url !== undefined;
+        const isSweep = event?.sweep === true;
+        expect(isReport || isSweep).toBe(true);
+      }
+      expect(assignedEvents.some((event) => event?.iid !== undefined && event?.url !== undefined)).toBe(true);
+      expect(assignedEvents.some((event) => event?.sweep === true)).toBe(true);
+    }
   }
 });
