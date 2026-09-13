@@ -54,13 +54,16 @@ jobs:
           # when the repository's Slack CLI needs it.
           PI_PROVIDER_KEY: ${{ secrets.PI_PROVIDER_KEY }}
           BENNY_SLACK_BOT_TOKEN: ${{ secrets.BENNY_SLACK_BOT_TOKEN }}
-          BENNY_EVENT: ${{ toJSON(github.event.client_payload) }}
+          BENNY_DISPATCH: ${{ toJSON(github.event.client_payload) }}
+          BENNY_INPUT_CHANNEL: ${{ inputs.channel }}
+          BENNY_INPUT_TS: ${{ inputs.ts }}
         run: |
           set -euo pipefail
-          event='${{ toJSON(github.event.client_payload) }}'
-          if [ "$event" = '{}' ] || [ -z "$event" ]; then
-            event=$(printf '{"channel":"%s","ts":"%s"}' '${{ inputs.channel }}' '${{ inputs.ts }}')
-          fi
+          event="$BENNY_DISPATCH"
+          case "$event" in '' | '{}' | 'null')
+            event=$(printf '{"channel":"%s","ts":"%s"}' "$BENNY_INPUT_CHANNEL" "$BENNY_INPUT_TS")
+            ;;
+          esac
           node .pi/automations/benny/runner/benny-run.ts \
             --mode triage \
             --config .pi/benny/configuration.yaml \

@@ -56,18 +56,22 @@ jobs:
           PI_PROVIDER_KEY: ${{ secrets.PI_PROVIDER_KEY }}
           BENNY_SLACK_BOT_TOKEN: ${{ secrets.BENNY_SLACK_BOT_TOKEN }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BENNY_DISPATCH: ${{ toJSON(github.event.client_payload) }}
+          BENNY_INPUT_CHANNEL: ${{ inputs.channel }}
+          BENNY_INPUT_TS: ${{ inputs.ts }}
         run: |
           set -euo pipefail
-          event='${{ toJSON(github.event.client_payload) }}'
-          if [ "$event" = '{}' ] || [ -z "$event" ]; then
-            if [ '${{ github.event_name }}' = 'workflow_dispatch' ]; then
-              event=$(printf '{"channel":"%s","ts":"%s"}' '${{ inputs.channel }}' '${{ inputs.ts }}')
+          event="$BENNY_DISPATCH"
+          case "$event" in '' | '{}' | 'null')
+            if [ "$GITHUB_EVENT_NAME" = 'workflow_dispatch' ]; then
+              event=$(printf '{"channel":"%s","ts":"%s"}' "$BENNY_INPUT_CHANNEL" "$BENNY_INPUT_TS")
             else
               # Scheduled sweep: let the skill pick the first report whose
               # trusted triage marker has no repro reply yet.
               event='{"sweep":true}'
             fi
-          fi
+            ;;
+          esac
           node .pi/automations/benny/runner/benny-run.ts \
             --mode reproduce \
             --config .pi/benny/configuration.yaml \

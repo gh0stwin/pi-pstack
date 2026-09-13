@@ -55,14 +55,20 @@ jobs:
         env:
           PI_PROVIDER_KEY: ${{ secrets.PI_PROVIDER_KEY }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BENNY_INPUT_ISSUE: ${{ inputs.issue }}
+          BENNY_EVENT_ISSUE: ${{ github.event.issue.number }}
+          BENNY_EVENT_URL: ${{ github.event.issue.html_url }}
         run: |
           set -euo pipefail
-          if [ '${{ github.event_name }}' = 'workflow_dispatch' ]; then
-            number='${{ inputs.issue }}'
-            url="https://github.com/${{ github.repository }}/issues/$number"
-            event="{\"issue\":$number,\"url\":\"$url\"}"
-          elif [ '${{ github.event_name }}' = 'issues' ]; then
-            event="{\"issue\":${{ github.event.issue.number }},\"url\":\"${{ github.event.issue.html_url }}\"}"
+          if [ "$GITHUB_EVENT_NAME" = 'workflow_dispatch' ]; then
+            number="$BENNY_INPUT_ISSUE"
+            case "$number" in
+              '' | *[!0-9]*) echo "benny: the issue input must be a positive integer" >&2; exit 1 ;;
+            esac
+            url="https://github.com/$GITHUB_REPOSITORY/issues/$number"
+            event=$(printf '{"issue":%s,"url":"%s"}' "$number" "$url")
+          elif [ "$GITHUB_EVENT_NAME" = 'issues' ]; then
+            event=$(printf '{"issue":%s,"url":"%s"}' "$BENNY_EVENT_ISSUE" "$BENNY_EVENT_URL")
           else
             # Scheduled sweep: let the skill pick the first triaged issue whose
             # trusted marker has no repro reply yet.
