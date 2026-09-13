@@ -15,12 +15,19 @@
  * `pstack-models.json`, then the agent definition's `model`, then the parent
  * session model. `inherit-parent` and `auto` role values select that parent
  * model and pass it to the child explicitly.
+ *
+ * Child pi resolution order: the `PI_PSTACK_PI_BIN` override, the installed pi
+ * CLI entry from this extension's own import chain, then `pi` on PATH. Never
+ * `process.argv[1]`: under the pi CLI that is pi, but when the SDK embeds this
+ * extension in-process it is the host program, and spawning it re-executes the
+ * host recursively.
  */
 
 import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Message } from "@earendil-works/pi-ai";
 import { StringEnum } from "@earendil-works/pi-ai";
@@ -86,15 +93,92 @@ interface SubagentDetails {
   results: SingleResult[];
 }
 
-function getPiInvocation(args: string[]): { command: string; args: string[] } {
-  const currentScript = process.argv[1];
-  if (currentScript && fs.existsSync(currentScript)) {
-    return { command: process.execPath, args: [currentScript, ...args] };
+const PI_PACKAGE = "@earendil-works/pi-coding-agent";
+const PI_ENTRY_ENV = "PI_PSTACK_PI_BIN";
+
+/**
+ * Resolve the installed pi CLI entry from this extension's own import chain.
+ * pi loads extensions in-process, so the `@earendil-works/pi-coding-agent`
+ * package this file resolves is the pi that loaded it, and its `bin.pi` names
+ * the CLI script. Returns undefined when the package or entry is unavailable
+ * so the caller can fall back to `pi` on PATH.
+ */
+function resolvePiEntryFromImportChain(): string | undefined {
+  try {
+    let dir = path.dirname(fileURLToPath(import.meta.resolve(PI_PACKAGE)));
+    for (;;) {
+      const manifestPath = path.join(dir, "package.json");
+      if (fs.existsSync(manifestPath)) {
+        const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as {
+          name?: string;
+          bin?: string | Record<string, string>;
+        };
+        if (manifest.name === PI_PACKAGE) {
+          const bin = typeof manifest.bin === "string" ? manifest.bin : manifest.bin?.pi;
+          if (typeof bin !== "string") return undefined;
+          const entry = path.resolve(dir, bin);
+          return fs.existsSync(entry) ? entry : undefined;
+        }
+      }
+      const parent = path.dirname(dir);
+      if (parent === dir) return undefined;
+      dir = parent;
+    }
+  } catch {
+    return undefined;
   }
+}
+
+/** The node or bun runtime running this extension, when `process.execPath` is one. */
+function scriptRuntime(): string | undefined {
   const execName = path.basename(process.execPath).toLowerCase();
-  if (!/^(node|bun)(\.exe)?$/.test(execName)) {
+  return /^(node|bun)(\.exe)?$/.test(execName) ? process.execPath : undefined;
+}
+
+/**
+ * True when `candidate` is the script this process is already running, which
+ * would re-execute the host program instead of starting a pi subagent.
+ */
+function isCurrentScript(candidate: string): boolean {
+  const current = process.argv[1];
+  if (current === undefined || current.length === 0) return false;
+  try {
+    return fs.realpathSync(candidate) === fs.realpathSync(current);
+  } catch {
+    return path.resolve(candidate) === path.resolve(current);
+  }
+}
+
+function invocationForEntry(entry: string, args: string[]): { command: string; args: string[] } {
+  const runtime = scriptRuntime();
+  if (runtime !== undefined && /\.(?:c|m)?js$/i.test(entry)) {
+    return { command: runtime, args: [entry, ...args] };
+  }
+  return { command: entry, args };
+}
+
+/**
+ * Resolve the child pi command. `process.argv[1]` is never spawned: under the
+ * pi CLI it is pi, but when the SDK embeds this extension in-process it is the
+ * host program, and spawning it forks the host recursively. An explicit
+ * `PI_PSTACK_PI_BIN` override that names the current script is refused for the
+ * same reason and resolution continues with the import chain.
+ */
+export function getPiInvocation(args: string[]): { command: string; args: string[] } {
+  // A compiled pi binary is its own entry point; pi's CLI marks itself with
+  // PI_CODING_AGENT. A script runtime means this is the node/bun CLI instead.
+  if (scriptRuntime() === undefined && process.env.PI_CODING_AGENT === "true") {
     return { command: process.execPath, args };
   }
+
+  const override = process.env[PI_ENTRY_ENV]?.trim();
+  if (override !== undefined && override.length > 0 && !isCurrentScript(override)) {
+    return invocationForEntry(override, args);
+  }
+
+  const resolved = resolvePiEntryFromImportChain();
+  if (resolved !== undefined) return invocationForEntry(resolved, args);
+
   return { command: "pi", args };
 }
 

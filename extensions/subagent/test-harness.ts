@@ -257,23 +257,23 @@ export async function withAgentDir<T>(dir: string, fn: () => Promise<T>): Promis
 /**
  * Run `fn` with the child-process resolver pointed at the fake pi script.
  *
- * `getPiInvocation` spawns `node <process.argv[1]>` when that path exists,
- * which is exactly how the extension spawns real children under pi; pointing
- * argv[1] at the fixture swaps the model for a deterministic run without
+ * `getPiInvocation` honors `PI_PSTACK_PI_BIN` as the explicit pi entry, which
+ * is exactly how an operator points the extension at a specific pi install;
+ * setting it to the fixture swaps the model for a deterministic run without
  * changing the extension's spawn path. `PI_CODING_AGENT_DIR` is already set to
  * the isolated temp agent dir by `withAgentDir`, so a fallback to a real `pi`
  * (or any child that reads pi config) never inherits the ambient global config.
  */
 export async function withFakePi<T>(logPath: string, fn: () => Promise<T>): Promise<T> {
-  const previousArgv1 = process.argv[1];
+  const previousBin = process.env.PI_PSTACK_PI_BIN;
   const previousLog = process.env.FAKE_PI_LOG;
-  process.argv[1] = FAKE_PI_PATH;
+  process.env.PI_PSTACK_PI_BIN = FAKE_PI_PATH;
   process.env.FAKE_PI_LOG = logPath;
   try {
     return await fn();
   } finally {
-    if (previousArgv1 === undefined) process.argv.splice(1, 1);
-    else process.argv[1] = previousArgv1;
+    if (previousBin === undefined) delete process.env.PI_PSTACK_PI_BIN;
+    else process.env.PI_PSTACK_PI_BIN = previousBin;
     if (previousLog === undefined) delete process.env.FAKE_PI_LOG;
     else process.env.FAKE_PI_LOG = previousLog;
   }

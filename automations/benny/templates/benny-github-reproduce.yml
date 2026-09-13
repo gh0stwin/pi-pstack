@@ -1,13 +1,17 @@
 # Benny reproduce-and-fix for the GitHub intake. Copy to
 # .github/workflows/benny-github-reproduce.yml in the target repository and
-# adjust the label and the pi install step.
+# adjust the guard label below and the pi install step.
 #
 # Use this pair instead of benny-triage.yml / benny-reproduce.yml when the
 # configuration sets `intake.source: github`. No Slack CLI or token is needed.
 #
-# The reproduce label defaults to `tracker.labels.needs_repro` ("needs-repro").
-# The schedule sweeps for the oldest triaged issue with no repro reply yet; a
-# labeled issue or a manual dispatch runs one issue immediately.
+# The reproduce label is `tracker.labels.needs_repro` in the configuration. The
+# job-level `if:` guard below is the only place this workflow declares it, and
+# a guard cannot read the configuration, so the literal MUST be changed to the
+# configured label when it is not "needs-repro" (setup-benny step 10). A
+# mismatch silently stops the labeled-event trigger. The schedule sweeps for
+# the oldest triaged issue with no repro reply yet; a labeled issue or a manual
+# dispatch runs one issue immediately.
 #
 # Keep `draft_only: true` in the configuration. This workflow never merges.
 name: benny-github-reproduce
@@ -29,6 +33,7 @@ concurrency:
 
 jobs:
   reproduce:
+    # Must equal `tracker.labels.needs_repro` in .pi/benny/configuration.yaml.
     if: ${{ github.event_name != 'issues' || github.event.label.name == 'needs-repro' }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
