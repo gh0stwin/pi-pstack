@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "../testing/expect.ts";
 import {
   ChecksUnavailable,
@@ -349,5 +350,29 @@ describe("context and stack discovery", () => {
       },
     ]);
     expect(ordered.map((item) => Number(item.number))).toEqual([41, 42, 43]);
+  });
+
+  it("terminates the down walk on a base/head cycle", () => {
+    // Reproduction from the review: two open PRs pointing at each other's
+    // branches (GitHub permits both) must yield a finite order instead of
+    // looping until OOM. Run it in a heap-capped child so a regression fails
+    // fast and cleanly rather than exhausting the test runner's memory.
+    const script = `
+      import { orderStack } from ${JSON.stringify(new URL("./github.ts", import.meta.url).href)};
+      import { parsePrNumber } from ${JSON.stringify(new URL("./types.ts", import.meta.url).href)};
+      const context = { owner: "owner", repo: "repo", number: parsePrNumber(1) };
+      const ordered = orderStack(context, [
+        { number: parsePrNumber(1), headRefName: "b1", baseRefName: "b2" },
+        { number: parsePrNumber(2), headRefName: "b2", baseRefName: "b1" },
+      ]);
+      console.log(JSON.stringify(ordered.map((pr) => Number(pr.number))));
+    `;
+    const child = spawnSync(
+      process.execPath,
+      ["--max-old-space-size=64", "--input-type=module", "--eval", script],
+      { encoding: "utf8", timeout: 30_000 }
+    );
+    expect(child.status).toBe(0);
+    expect(child.stdout.trim()).toBe("[2,1]");
   });
 });
