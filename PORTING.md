@@ -352,7 +352,7 @@ Ordered by area. Each entry is a change the captain can disagree with.
 1. **`package.json` replaces `.cursor-plugin/plugin.json`.** Name `pi-pstack`, version `0.15.2` (tracks upstream), `private: true`, `type: module`, `license: MIT`, keyword `pi-package`, and a `pi` manifest declaring `extensions/` and `skills/`. The upstream `displayName`, `category`, `tags`, `logo`, `homepage`, and `repository` fields have no pi manifest equivalent; the repository and homepage are in `README.md` instead. The `prompts` manifest entry was removed because the package ships no prompt templates: both upstream slash commands are now skills.
 2. **Install path changed.** Upstream: install the plugin from Cursor's marketplace. Here: `pi install git:github.com/gh0stwin/pi-pstack`. `pi install -l` is the project-scoped form Benny uses.
 3. **`dependencies` gained `commander@14.0.0`** for the ported `watch-pr` and `orch` CLIs. It is declared at the package root because pi runs `npm install` there and Node resolves upward from the importing file. `dependencies` also carries `@juicesharp/rpiv-ask-user-question@2.9.0`, bundled and loaded through the `pi` manifest, for the `ask_user_question` tool that replaces Cursor's `AskQuestion`. `peerDependencies` lists pi's bundled packages (`@earendil-works/pi-*`, `typebox`) with `"*"`, per the package docs.
-4. **Build, test, and lint setup added.** `npm run typecheck` typechecks `extensions/`, `automations/`, and the scripts tree; `npm test` runs all 128 tests through `node --test`; `npm run check` runs both. Upstream had no package-level check.
+4. **Build, test, and lint setup added.** `npm run typecheck` typechecks `extensions/`, `automations/`, and the scripts tree; `npm test` runs all 129 tests through `node --test`; `npm run check` runs both. Upstream had no package-level check.
 
 ### Skills
 
@@ -401,7 +401,7 @@ Ordered by area. Each entry is a change the captain can disagree with.
 35. **Destination changed** from `.cursor/automations/benny/` to `.pi/automations/benny/`, and user configuration from `.cursor/benny/` to `.pi/benny/`.
 36. **Plugin enablement replaced.** Upstream merged a `plugins.pstack.enabled` entry into `.cursor/settings.json`. Here setup runs `pi install -l git:github.com/gh0stwin/pi-pstack`, which writes `.pi/settings.json`.
 37. **Two hosted automations replaced by two headless jobs.** `runner/benny-run.ts` builds the `pi -p` prompt from the config and the event; `templates/benny-triage.yml` and `templates/benny-reproduce.yml` are the GitHub Actions forms for the Slack intake, and `templates/benny-github-triage.yml` / `templates/benny-github-reproduce.yml` are the forms for the GitHub intake. The reproduce job polls on a 15-minute schedule for a report whose trusted marker has no repro reply yet, because a headless job cannot wait inside one run for an unbounded time.
-38. **Slack actions replaced by a CLI contract.** `<cli> thread|permalink|post|react|edit|download`, named in `slack.cli`. The token lives with the CLI, never in YAML and never in a worker's environment. Slack is one of the intakes: `intake.source: github` runs the same operational files with a GitHub issue as the source and the tracker adapter as the verdict sink, and needs no Slack CLI, token, or config section. (Entries 48–49 generalize this to a binding contract and add the webhook intake.)
+38. **Slack actions replaced by a CLI contract.** `<cli> thread|permalink|post|react|edit|download`, named in `slack.cli`. The token lives with the CLI, never in YAML and never in a worker's environment. Slack is one of the intakes: `intake.source: github` runs the same operational files with a GitHub issue as the source and the tracker adapter as the verdict sink, and needs no Slack CLI, token, or config section. (Entries 48–50 generalize this to a binding contract and add the webhook and GitLab intakes.)
 39. **`control-adapter.md` → `verification-adapter.md`**, and the `control.*` config keys became `verification.*`. The concept is unchanged: one skill that can bring the app up, drive it, inspect state, capture evidence, and clean up.
 40. **Model configuration is now pi model ids**, with `inherit-parent`/`auto` supported. The upstream placeholder slugs are gone.
 41. **The tracker config is now adapter-based** (`tracker.adapter`, with `gh issue` as the reference) rather than a vendor-named skill placeholder.
@@ -469,16 +469,16 @@ After the intake-binding change, `loadSkillsFromDir` against `automations/benny/
 ### Scripts
 
 ```bash
-npm run check        # typecheck (extensions + automations + scripts) and 128 tests
+npm run check        # typecheck (extensions + automations + scripts) and 129 tests
 ```
 
 ```text
 watch-pr: 39 tests, 0 fail
 orch:     14 tests, 0 fail
-benny-run: 34 tests, 0 fail
+benny-run: 35 tests, 0 fail
 installation: 4 tests, 0 fail
 subagent: 37 tests, 0 fail
-total:    128 tests, 0 fail
+total:    129 tests, 0 fail
 ```
 
 All under Node 24 with `node --test`. `worktree-audit.sh` passes `bash -n` and was run against this repository (it produced a row with a `LAST_SESSION` date and the `hold-wip` bucket). `check-plan.mjs` behavior is unchanged.
