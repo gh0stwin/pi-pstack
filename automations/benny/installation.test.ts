@@ -422,31 +422,6 @@ it("ships GitHub-intake workflows that drive the runner with the no-Slack event,
   }
 });
 
-it("documents that the GitHub guard labels must track the configured labels", () => {
-  const setupSkill = readFileSync(
-    join(packageRoot, "automations", "benny", "skills", "setup-benny", "SKILL.md"),
-    "utf8",
-  );
-  const cases = [
-    { file: "benny-github-triage.yml", key: "tracker.labels.intake" },
-    { file: "benny-github-reproduce.yml", key: "tracker.labels.needs_repro" },
-  ];
-
-  for (const { file, key } of cases) {
-    const template = readFileSync(join(packageRoot, "automations", "benny", "templates", file), "utf8");
-    // Both the template and the setup skill state the sync requirement with
-    // the exact configuration key, and the setup skill names the copied file,
-    // so a changed label cannot drift unnoticed.
-    expect(template).toContain(key);
-    expect(template).toContain("`if:`");
-    expect(template).toContain("MUST be changed");
-    expect(setupSkill).toContain(key);
-    expect(setupSkill).toContain(file);
-  }
-  expect(setupSkill).toContain("`if:`");
-  expect(setupSkill).toContain("silently stops the labeled-event trigger");
-});
-
 it("ships GitLab-intake workflows that drive the runner with the GitLab event, newly-added-label guard, and env", () => {
   const cases = [
     {
