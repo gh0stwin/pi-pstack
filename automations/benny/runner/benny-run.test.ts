@@ -4,9 +4,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "../../../skills/poteto-mode/scripts/testing/expect.ts";
 import {
+  BINDING_REFERENCE,
   OPERATIONAL_FILES,
+  buildBinding,
   buildPiArgs,
   buildPrompt,
+  namesSameItem,
   parseArgs,
   readConfigValue,
   resolveIntake,
@@ -14,6 +17,8 @@ import {
   run,
   validateEvent,
   validateIntake,
+  type IntakeBinding,
+  type Mode,
   type RunnerOptions,
 } from "./benny-run.ts";
 
@@ -21,6 +26,8 @@ const slackConfig = `schema_version: 1
 slack:
   cli: "benny-slack"
   source_channel_id: "C0123"
+  operations_channel_id: "C0999"
+  triage_identity_user_id: "U0123"
 models:
   triage: "inherit-parent"
   reproduce: "deepinfra/zai-org/GLM-5.3-Flash"
@@ -28,11 +35,21 @@ budgets:
   poll_seconds: 45
 `;
 
-const noSlackConfig = `schema_version: 1
+const githubConfig = `schema_version: 1
 intake:
   source: "github"
 repository:
   url: "https://github.com/example-org/example-repo"
+tracker:
+  adapter: "gh issue"
+models:
+  triage: "inherit-parent"
+  reproduce: "inherit-parent"
+`;
+
+const webhookConfig = `schema_version: 1
+intake:
+  source: "webhook"
 models:
   triage: "inherit-parent"
   reproduce: "inherit-parent"
@@ -40,6 +57,15 @@ models:
 
 const slackEvent = '{"channel":"C0123","ts":"1700000000.000100"}';
 const githubEvent = '{"issue":123,"url":"https://github.com/example-org/example-repo/issues/123"}';
+const webhookEvent = JSON.stringify({
+  source_item: "SUP-1234",
+  source_thread: "SUP-1234",
+  verdict_location: "SUP-1234#reply",
+  adapter: { read: "support-cli thread SUP-1234", post: "support-cli reply SUP-1234" },
+  verdict_identity: "support-agent",
+});
+
+const packRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 function tempConfig(text: string): string {
   const directory = mkdtempSync(join(tmpdir(), "benny-runner-"));
@@ -67,6 +93,24 @@ function captureOutput(fn: () => number): { code: number; stdout: string; stderr
     process.stdout.write = originalOut;
     process.stderr.write = originalErr;
   }
+}
+
+function bindingOf(configText: string, event: string, mode: Mode = "triage"): IntakeBinding {
+  const intake = resolveIntake(configText);
+  if ("error" in intake) throw new Error(intake.error);
+  const binding = buildBinding(intake, event, mode);
+  if ("error" in binding) throw new Error(binding.error);
+  return binding;
+}
+
+function occurrences(text: string, needle: string): number {
+  let count = 0;
+  let index = text.indexOf(needle);
+  while (index !== -1) {
+    count += 1;
+    index = text.indexOf(needle, index + needle.length);
+  }
+  return count;
 }
 
 it("reads a two-level config value by indentation", () => {
@@ -114,11 +158,14 @@ it("resolves the intake from the declared source or the configured section", () 
   expect(slack.source).toBe("slack");
   expect(slack.slackCli).toBe("benny-slack");
   expect(slack.slackSourceChannelId).toBe("C0123");
+  expect(slack.slackOperationsChannelId).toBe("C0999");
+  expect(slack.slackTriageIdentity).toBe("U0123");
 
-  const github = resolveIntake(noSlackConfig);
+  const github = resolveIntake(githubConfig);
   if ("error" in github) throw new Error("expected github intake");
   expect(github.source).toBe("github");
   expect(github.repositoryUrl).toBe("https://github.com/example-org/example-repo");
+  expect(github.trackerAdapter).toBe("gh issue");
 
   const declared = resolveIntake(`intake:\n  source: "github"\nslack:\n  cli: "benny-slack"\n`);
   if ("error" in declared) throw new Error("expected declared intake");
@@ -127,6 +174,11 @@ it("resolves the intake from the declared source or the configured section", () 
   const inferredGithub = resolveIntake(`repository:\n  url: "https://github.com/example-org/example-repo"\n`);
   if ("error" in inferredGithub) throw new Error("expected inferred github intake");
   expect(inferredGithub.source).toBe("github");
+
+  const webhook = resolveIntake(webhookConfig);
+  if ("error" in webhook) throw new Error("expected webhook intake");
+  expect(webhook.source).toBe("webhook");
+  expect(validateIntake(webhook)).toEqual([]);
 });
 
 it("fails closed when no intake source is configured or the value is invalid", () => {
@@ -137,6 +189,7 @@ it("fails closed when no intake source is configured or the value is invalid", (
   if (!("error" in invalid)) throw new Error("expected an error");
   expect(invalid.error).toContain("slack");
   expect(invalid.error).toContain("github");
+  expect(invalid.error).toContain("webhook");
 });
 
 it("requires the Slack CLI and source channel for the Slack intake", () => {
@@ -153,10 +206,15 @@ it("requires the Slack CLI and source channel for the Slack intake", () => {
   expect(validateIntake(complete)).toEqual([]);
 });
 
-it("requires the repository URL for the GitHub intake", () => {
+it("requires the repository URL and the tracker adapter for the GitHub intake", () => {
   const missing = resolveIntake(`intake:\n  source: "github"\n`);
   if ("error" in missing) throw new Error("expected github intake");
   expect(validateIntake(missing)).toContain("repository.url is required for the GitHub intake");
+  expect(validateIntake(missing)).toContain("tracker.adapter is required for the GitHub intake");
+
+  const complete = resolveIntake(githubConfig);
+  if ("error" in complete) throw new Error("expected github intake");
+  expect(validateIntake(complete)).toEqual([]);
 });
 
 it("validates the Slack event coordinates", () => {
@@ -182,7 +240,110 @@ it("validates the GitHub event coordinates", () => {
   expect(validateEvent("[]", "triage", "github")).toContain("JSON object");
 });
 
-it("builds a prompt that names the operational file and the event", () => {
+it("names the source item, source thread, verdict location, and adapter for the Slack intake", () => {
+  const binding = bindingOf(slackConfig, slackEvent);
+  expect(binding.source).toBe("slack");
+  expect(binding.sourceItem).toContain("channel C0123");
+  expect(binding.sourceItem).toContain("ts 1700000000.000100");
+  expect(binding.sourceThread).toContain("thread_ts 1700000000.000100");
+  expect(binding.verdictLocation).toContain("exactly one reply in that thread");
+  expect(binding.verdictLocation).toContain("thread_ts 1700000000.000100");
+  expect(binding.adapter.name).toBe("Slack CLI benny-slack");
+  expect(binding.adapter.read).toBe("benny-slack thread C0123 1700000000.000100");
+  expect(binding.adapter.post).toBe("benny-slack post C0123 1700000000.000100 <text>");
+  expect(binding.verdictIdentity).toBe("U0123");
+  expect(binding.operationsLocation).toContain("C0999");
+
+  const reply = bindingOf(slackConfig, '{"channel":"C0123","ts":"1.2","thread_ts":"1.0"}');
+  expect(reply.sourceThread).toContain("thread_ts 1.0");
+  expect(reply.adapter.read).toBe("benny-slack thread C0123 1.0");
+  expect(reply.adapter.post).toBe("benny-slack post C0123 1.0 <text>");
+});
+
+it("names the source item, source thread, verdict location, and adapter for the GitHub intake", () => {
+  const binding = bindingOf(githubConfig, githubEvent);
+  expect(binding.source).toBe("github");
+  expect(binding.sourceItem).toContain("GitHub issue #123");
+  expect(binding.sourceItem).toContain("https://github.com/example-org/example-repo/issues/123");
+  expect(binding.sourceThread).toContain("issue and its comments");
+  expect(binding.verdictLocation).toBe("exactly one comment on that issue");
+  expect(binding.adapter.name).toContain("gh issue");
+  expect(binding.adapter.read).toContain("tracker adapter");
+  expect(binding.adapter.post).toContain("exactly one comment");
+  expect(binding.verdictIdentity).toContain("tracker identity");
+  expect(binding.operationsLocation).toBe("the run output");
+});
+
+it("builds the webhook binding from the event and defaults the thread and the identity", () => {
+  const binding = bindingOf(webhookConfig, webhookEvent);
+  expect(binding.source).toBe("webhook");
+  expect(binding.sourceItem).toBe("SUP-1234");
+  expect(binding.sourceThread).toBe("SUP-1234");
+  expect(binding.verdictLocation).toBe("SUP-1234#reply");
+  expect(binding.adapter.read).toBe("support-cli thread SUP-1234");
+  expect(binding.adapter.post).toBe("support-cli reply SUP-1234");
+  expect(binding.verdictIdentity).toBe("support-agent");
+  expect(binding.operationsLocation).toBe("the run output");
+
+  const minimal = bindingOf(
+    webhookConfig,
+    '{"source_item":"SUP-1","verdict_location":"SUP-1/reply","adapter":{"read":"r","post":"p"}}',
+  );
+  expect(minimal.sourceThread).toBe("SUP-1");
+  expect(minimal.verdictIdentity).toBe("the identity the adapter posts as");
+});
+
+it("validates the webhook payload fail-closed", () => {
+  expect(validateEvent(webhookEvent, "triage", "webhook")).toBeUndefined();
+
+  const cases: Array<[string, string]> = [
+    ['{"verdict_location":"SUP-1234#reply","adapter":{"read":"r","post":"p"}}', "source_item"],
+    ['{"source_item":"","verdict_location":"SUP-1234#reply","adapter":{"read":"r","post":"p"}}', "source_item"],
+    ['{"source_item":"SUP-1234","adapter":{"read":"r","post":"p"}}', "verdict_location"],
+    ['{"source_item":"SUP-1234","verdict_location":"SUP-1234#reply"}', "adapter"],
+    ['{"source_item":"SUP-1234","verdict_location":"SUP-1234#reply","adapter":"support-cli"}', "adapter"],
+    ['{"source_item":"SUP-1234","verdict_location":"SUP-1234#reply","adapter":{"post":"p"}}', "adapter.read"],
+    ['{"source_item":"SUP-1234","verdict_location":"SUP-1234#reply","adapter":{"read":"r"}}', "adapter.post"],
+    ['{"source_item":"SUP-1234","verdict_location":"SUP-9999#reply","adapter":{"read":"r","post":"p"}}', "same item"],
+    ['{"source_item":"SUP-1234","verdict_location":"SUP-1234#reply","adapter":{"read":"r","post":"p"},"source_thread":7}', "source_thread"],
+    ['{"source_item":"SUP-1234","verdict_location":"SUP-1234#reply","adapter":{"read":"r","post":"p"},"verdict_identity":""}', "verdict_identity"],
+    ['{"source_item":"SUP-1234","verdict_location":"SUP-1234#reply","adapter":{"read":"r\\nrm -rf /","post":"p"}}', "single line"],
+    ["not-json", "valid JSON"],
+    ["[]", "JSON object"],
+  ];
+  for (const [event, message] of cases) {
+    const error = validateEvent(event, "triage", "webhook");
+    expect(error).toBeDefined();
+    expect(error ?? "").toContain(message);
+  }
+});
+
+it("matches the verdict location to the source item as a whole token", () => {
+  expect(namesSameItem("SUP-1234#reply", "SUP-1234")).toBe(true);
+  expect(namesSameItem("https://example.com/reports/123#comment", "https://example.com/reports/123")).toBe(true);
+  expect(namesSameItem("report-123", "123")).toBe(true);
+  expect(namesSameItem("SUP-12345#reply", "SUP-1234")).toBe(false);
+  expect(namesSameItem("report-1234", "123")).toBe(false);
+  expect(namesSameItem("", "123")).toBe(false);
+});
+
+it("rejects a sweep for the webhook intake and keeps the sweep binding for the configured intakes", () => {
+  expect(validateEvent('{"sweep":true}', "reproduce", "webhook")).toContain("cannot sweep");
+  expect(validateEvent('{"sweep":true}', "reproduce", "slack")).toBeUndefined();
+  expect(validateEvent('{"sweep":true}', "reproduce", "github")).toBeUndefined();
+
+  const slackSweep = bindingOf(slackConfig, '{"sweep":true}', "reproduce");
+  expect(slackSweep.sourceItem).toContain("oldest report");
+  expect(slackSweep.sourceItem).toContain("C0123");
+  expect(slackSweep.adapter.name).toBe("Slack CLI benny-slack");
+
+  const githubSweep = bindingOf(githubConfig, '{"sweep":true}', "reproduce");
+  expect(githubSweep.sourceItem).toContain("oldest issue");
+  expect(githubSweep.verdictLocation).toBe("exactly one comment on the chosen issue");
+  expect(githubSweep.adapter.name).toContain("gh issue");
+});
+
+it("builds a prompt that names the operational file, the event, and the binding", () => {
   const options: RunnerOptions = {
     mode: "reproduce",
     configPath: ".pi/benny/configuration.yaml",
@@ -190,17 +351,21 @@ it("builds a prompt that names the operational file and the event", () => {
     repo: "/repo",
     dryRun: true,
   };
-  const prompt = buildPrompt(options, { source: "slack", slackCli: "benny-slack", slackSourceChannelId: "C0123" });
+  const prompt = buildPrompt(options, bindingOf(slackConfig, slackEvent, "reproduce"));
   expect(prompt).toContain(join("/repo", OPERATIONAL_FILES.reproduce));
+  expect(prompt).toContain(join("/repo", BINDING_REFERENCE));
   expect(prompt).toContain("Configuration: .pi/benny/configuration.yaml");
   expect(prompt).toContain(`Event: ${slackEvent}`);
-  expect(prompt).toContain("Intake: Slack");
-  expect(prompt).toContain("Slack CLI: benny-slack");
-  expect(prompt).toContain("post the single verdict only as a reply");
-  expect(prompt).toContain("fail closed");
+  expect(prompt).toContain("- intake: slack");
+  expect(prompt).toContain("- source item: the Slack report message in channel C0123");
+  expect(prompt).toContain("- verdict location: exactly one reply in that thread");
+  expect(prompt).toContain("- adapter read: benny-slack thread C0123 1700000000.000100");
+  expect(prompt).toContain("- adapter post: benny-slack post C0123 1700000000.000100 <text>");
+  expect(prompt).toContain("Never open a new top-level post");
+  expect(prompt).toContain("Fail closed");
 });
 
-it("builds a GitHub prompt that forbids Slack when no Slack CLI is configured", () => {
+it("builds a GitHub prompt that names the tracker adapter and never mentions Slack", () => {
   const options: RunnerOptions = {
     mode: "triage",
     configPath: ".pi/benny/configuration.yaml",
@@ -208,13 +373,13 @@ it("builds a GitHub prompt that forbids Slack when no Slack CLI is configured", 
     repo: "/repo",
     dryRun: true,
   };
-  const prompt = buildPrompt(options, { source: "github", repositoryUrl: "https://github.com/example-org/example-repo" });
+  const prompt = buildPrompt(options, bindingOf(githubConfig, githubEvent));
   expect(prompt).toContain(join("/repo", OPERATIONAL_FILES.triage));
-  expect(prompt).toContain("Intake: GitHub issues");
-  expect(prompt).toContain("No Slack CLI is configured");
-  expect(prompt).toContain("Do not call Slack or any Slack API");
-  expect(prompt).toContain("comment");
-  expect(prompt).not.toContain("Slack CLI:");
+  expect(prompt).toContain("- intake: github");
+  expect(prompt).toContain("- source item: GitHub issue #123");
+  expect(prompt).toContain('- adapter: the tracker adapter "gh issue"');
+  expect(prompt).toContain("- verdict location: exactly one comment on that issue");
+  expect(prompt).not.toContain("Slack");
 });
 
 it("prints the pi command in dry-run mode without starting pi", () => {
@@ -227,11 +392,12 @@ it("prints the pi command in dry-run mode without starting pi", () => {
   expect(stdout).toContain("pi ");
   expect(stdout).toContain("--no-session");
   expect(stdout).toContain(OPERATIONAL_FILES.triage);
+  expect(stdout).toContain("- intake: slack");
   expect(stdout).not.toContain("--model");
 });
 
-it("runs the optional path with no Slack configured and prints a usable command", () => {
-  const configPath = tempConfig(noSlackConfig);
+it("runs the GitHub path with no Slack configured and prints a usable command", () => {
+  const configPath = tempConfig(githubConfig);
   const { code, stdout, stderr } = captureOutput(() =>
     run({ mode: "triage", configPath, event: githubEvent, repo: dirname(configPath), dryRun: true }),
   );
@@ -240,9 +406,62 @@ it("runs the optional path with no Slack configured and prints a usable command"
   expect(code).toBe(0);
   expect(stdout).toContain('pi "-p" "--no-session"');
   expect(stdout).toContain(OPERATIONAL_FILES.triage);
-  expect(stdout).toContain("Intake: GitHub issues");
-  expect(stdout).toContain("Do not call Slack or any Slack API");
+  expect(stdout).toContain("- intake: github");
+  expect(stdout).toContain("- adapter: the tracker adapter");
+  expect(stdout).toContain("gh issue");
+  expect(stdout).not.toContain("Slack");
   expect(stdout).not.toContain("--model");
+});
+
+it("runs the webhook path in dry-run mode from the event binding", () => {
+  const configPath = tempConfig(webhookConfig);
+  const { code, stdout, stderr } = captureOutput(() =>
+    run({ mode: "triage", configPath, event: webhookEvent, repo: dirname(configPath), dryRun: true }),
+  );
+
+  expect(stderr).toBe("");
+  expect(code).toBe(0);
+  expect(stdout).toContain("Intake binding:");
+  expect(stdout).toContain("- intake: webhook");
+  expect(stdout).toContain("- source item: SUP-1234");
+  expect(stdout).toContain("- verdict location: SUP-1234#reply");
+  expect(stdout).toContain("support-cli thread SUP-1234");
+  expect(stdout).toContain("support-cli reply SUP-1234");
+  expect(stdout).not.toContain("--model");
+});
+
+it("fails closed through the runner for the webhook intake", () => {
+  const configPath = tempConfig(webhookConfig);
+
+  const mismatch = captureOutput(() =>
+    run({
+      mode: "triage",
+      configPath,
+      event: '{"source_item":"SUP-1","verdict_location":"SUP-2#reply","adapter":{"read":"r","post":"p"}}',
+      repo: "/tmp",
+      dryRun: true,
+    }),
+  );
+  expect(mismatch.code).toBe(2);
+  expect(mismatch.stderr).toContain("same item");
+
+  const noAdapter = captureOutput(() =>
+    run({
+      mode: "triage",
+      configPath,
+      event: '{"source_item":"SUP-1","verdict_location":"SUP-1#reply","adapter":{"post":"p"}}',
+      repo: "/tmp",
+      dryRun: true,
+    }),
+  );
+  expect(noAdapter.code).toBe(2);
+  expect(noAdapter.stderr).toContain("adapter.read");
+
+  const sweep = captureOutput(() =>
+    run({ mode: "reproduce", configPath, event: '{"sweep":true}', repo: "/tmp", dryRun: true }),
+  );
+  expect(sweep.code).toBe(2);
+  expect(sweep.stderr).toContain("cannot sweep");
 });
 
 it("uses the configured model and the CLI override", () => {
@@ -291,6 +510,18 @@ it("fails closed when the config is missing, incomplete, or the event is malform
   expect(noChannel.code).toBe(2);
   expect(noChannel.stderr).toContain("slack.source_channel_id is required");
 
+  const noTracker = captureOutput(() =>
+    run({
+      mode: "triage",
+      configPath: tempConfig(`intake:\n  source: "github"\nrepository:\n  url: "https://github.com/example-org/example-repo"\n`),
+      event: githubEvent,
+      repo: "/tmp",
+      dryRun: true,
+    }),
+  );
+  expect(noTracker.code).toBe(2);
+  expect(noTracker.stderr).toContain("tracker.adapter is required");
+
   const badEvent = captureOutput(() =>
     run({ mode: "triage", configPath: tempConfig(slackConfig), event: "{}", repo: "/tmp", dryRun: true }),
   );
@@ -298,14 +529,15 @@ it("fails closed when the config is missing, incomplete, or the event is malform
   expect(badEvent.stderr).toContain("event.channel");
 });
 
-it("ships an example configuration that validates for the Slack path", () => {
-  const examplePath = join(dirname(fileURLToPath(import.meta.url)), "..", "templates", "configuration.example.yaml");
+it("ships an example configuration that validates for the Slack path and documents the webhook path", () => {
+  const examplePath = join(packRoot, "templates", "configuration.example.yaml");
   const text = readFileSync(examplePath, "utf8");
   const intake = resolveIntake(text);
   if ("error" in intake) throw new Error(intake.error);
   expect(intake.source).toBe("slack");
   expect(validateIntake(intake)).toEqual([]);
   expect(validateEvent(slackEvent, "triage", intake.source)).toBeUndefined();
+  expect(text).toContain("webhook");
 });
 
 it("builds the pi argument list in a stable order", () => {
@@ -316,10 +548,49 @@ it("builds the pi argument list in a stable order", () => {
     repo: "/repo",
     dryRun: true,
   };
-  const args = buildPiArgs(options, { source: "github", repositoryUrl: "https://github.com/example-org/example-repo" }, "provider/model");
+  const args = buildPiArgs(options, bindingOf(githubConfig, githubEvent), "provider/model");
   expect(args[0]).toBe("-p");
   expect(args[1]).toBe("--no-session");
   expect(args[2]).toBe("--model");
   expect(args[3]).toBe("provider/model");
   expect(args).toHaveLength(5);
+});
+
+it("states each safety rule once per operational file and never per intake", () => {
+  const files = [
+    join(packRoot, "skills", "triage-issue-reports", "SKILL.md"),
+    join(packRoot, "skills", "reproduce-and-fix-issues", "SKILL.md"),
+  ];
+  const rules = [
+    "exactly one verdict",
+    "never open a new top-level post",
+    "source coordinates are immutable",
+    "fail closed",
+  ];
+  for (const file of files) {
+    const text = readFileSync(file, "utf8").toLowerCase();
+    for (const rule of rules) expect(occurrences(text, rule)).toBe(1);
+    // The operational file speaks in binding terms; the adapter reference owns the specifics.
+    expect(text.includes("slack")).toBe(false);
+    expect(text.includes("channel")).toBe(false);
+    expect(text.includes("thread_ts")).toBe(false);
+    expect(text.includes("chat.postmessage")).toBe(false);
+    expect(text.includes("reactions.add")).toBe(false);
+    expect(text.includes("benny_slack_bot_token")).toBe(false);
+    expect(text).toContain("references/intake-binding.md");
+  }
+});
+
+it("keeps the intake and adapter specifics in the shared binding reference", () => {
+  expect(BINDING_REFERENCE).toBe(".pi/automations/benny/references/intake-binding.md");
+  const reference = readFileSync(join(packRoot, "references", "intake-binding.md"), "utf8");
+  for (const name of ["source item", "source thread", "verdict location", "adapter"]) {
+    expect(reference).toContain(name);
+  }
+  expect(reference).toContain("chat.postMessage");
+  expect(reference).toContain("reactions.add");
+  expect(reference).toContain("BENNY_SLACK_BOT_TOKEN");
+  expect(reference).toContain("source_item");
+  expect(reference).toContain("verdict_location");
+  expect(reference).toContain("Adding an intake");
 });

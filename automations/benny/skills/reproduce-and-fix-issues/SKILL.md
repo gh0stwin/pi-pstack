@@ -1,30 +1,31 @@
 ---
 name: reproduce-and-fix-issues
-description: Reproduce triaged Slack bugs through a configured app-verification adapter, verify existing fixes, and open a bounded draft pull request only after before-and-after proof. Use only from the configured Benny reproduce run.
+description: Reproduce triaged bugs through a configured app-verification adapter, verify existing fixes, and open a bounded draft pull request only after before-and-after proof. Use only from the configured Benny reproduce run.
 disable-model-invocation: true
 ---
 
 # Reproduce and fix issues
 
-The event comes from the headless run (`runner/benny-run.ts` or the `benny-reproduce` workflow). It either names one report (`channel`, `ts`, optional `thread_ts`) or asks for a sweep (`{"sweep": true}`).
+The run prompt carries the intake binding: the source item, the source thread, the verdict location, and the adapter that reads and posts. Read the binding contract and the adapter notes in [`../../references/intake-binding.md`](../../references/intake-binding.md) before the first source read or post.
 
-On a sweep, scan the configured source channel for the oldest report that carries a trusted triage marker from the configured triage identity, has no repro reply yet, and is still inside the configured verdict budget. Run that one report. Stop cleanly when there is none; a sweep that finds nothing is not a failure.
+The event either names one report through the binding or asks for a sweep (`{"sweep": true}`). On a sweep, the binding names the source collection and the adapter; scan it for the oldest report that carries a trusted triage marker from the binding's trusted verdict identity, has no repro reply yet, and is still inside the configured verdict budget. Run that one report. Stop cleanly when there is none; a sweep that finds nothing is not a failure.
 
 Wait for a trusted triage marker in the source thread. Reproduce the exact symptom through the target app's real UI. Verify an existing fix when one exists. Attempt a bounded fix only after a confirmed repro.
 
-Load the external Benny configuration supplied by the run. If the config, the Slack CLI, the tracker adapter, the verification skill, or the completed feature map is missing, fail closed.
+Load the external Benny configuration supplied by the run. If the config, the binding, the adapter, the verification skill, or the completed feature map is missing, stop without posting or writing to the source.
 
 ## Hard safety rules
 
-- Freeze the source channel and root thread coordinates before doing any work.
-- Never post a root message in the source channel.
-- Preflight the source parent before every source-thread post.
-- The coordinator is the only Slack poster.
+- Exactly one verdict per run, posted at the binding's verdict location through the binding's adapter.
+- Never open a new top-level post for the report.
+- The binding's source coordinates are immutable.
+- Preflight the source item before every source-thread post.
+- The coordinator is the only adapter poster.
 - Delegated analysis workers are read-only and return findings or media notes.
-- A fix-phase code worker may edit only when its environment provably excludes Slack credentials and every Slack write action. Otherwise the coordinator edits.
-- Every child prompt must explicitly forbid every Slack write: `chat.postMessage`, `chat.update`, `chat.delete`, `reactions.add`, and any `<slack.cli> post`, `edit`, or `react` call.
-- Never give a child a Slack token, posting instructions, source coordinates for posting, or permission to report externally.
-- If a child needs Slack write access to run, do not launch it.
+- A fix-phase code worker may edit only when its environment provably excludes adapter credentials and every adapter write action. Otherwise the coordinator edits.
+- Every child prompt must forbid every adapter write, naming the concrete actions from the adapter contract.
+- Never give a child adapter credentials, posting instructions, source coordinates for posting, or permission to report externally.
+- If a child needs adapter write access to run, do not launch it.
 - Utility bots are evidence sources. They do not own the fix unless a person explicitly delegated the fix to them.
 - The exact discriminating symptom must appear twice through real UI interaction.
 - State inspection may confirm an observation. It must not inject or force the symptom.
@@ -32,43 +33,43 @@ Load the external Benny configuration supplied by the run. If the config, the Sl
 - Existing pull requests or commits switch the run to verify mode. Do not author over them.
 - Use `github.com` pull request links.
 - Keep captures, recordings, logs, and tokens out of source control.
+- Fail closed when the binding, the adapter, the verification skill, or the completed feature map is missing or uncertain.
 - Use pstack's `principle-guard-the-context-window` for delegated analysis.
 - Apply pstack's `principle-sequence-verifiable-units`, `principle-fix-root-causes`, and `principle-prove-it-works` through repro, fix, and verification.
 
 ## Subagents on pi
 
-Spawn delegated workers with pi-pstack's `subagent` tool and `readonly: true`, which pins `read`, `grep`, `find`, and `ls`. A subagent is a separate pi process that inherits the parent environment, so never export a Slack token into an environment a worker will run in. Keep the coordinator as the only poster.
+Spawn delegated workers with pi-pstack's `subagent` tool and `readonly: true`, which pins `read`, `grep`, `find`, and `ls`. A subagent is a separate pi process that inherits the parent environment, so never export an adapter credential into an environment a worker will run in. Keep the coordinator as the only poster.
 
-## 1. Freeze source coordinates
+## 1. Freeze the binding
 
 Before making a work list or delegating:
 
-1. Require the event channel to equal the configured source channel.
-2. Set `SOURCE_THREAD_TS` to `event.thread_ts` when present. Otherwise use `event.ts`.
-3. Require a nonempty `SOURCE_THREAD_TS`.
-4. Store `SOURCE_CHANNEL_ID` and `SOURCE_THREAD_TS` as immutable values.
-5. Read the source thread and verify its root has those exact coordinates.
-6. Fetch the source permalink.
+1. Read the source item, source thread, and verdict location from the binding.
+2. Require all three to be nonempty and consistent with the event or the sweep result.
+3. Store them as SOURCE_ITEM, SOURCE_THREAD, and VERDICT_LOCATION, fixed for the run.
+4. Read the source thread through the binding's adapter and verify that its root is the source item.
+5. Fetch the source permalink through the adapter.
 
-Never replace these values with a reply timestamp, operations timestamp, or status-message timestamp.
+Never replace these values with a reply, operations, or status-message coordinate.
 
-Before every source-channel post:
+Before every source post:
 
-1. Read the thread by the immutable coordinates.
-2. Confirm the parent exists, is not deleted, and still belongs to the source channel.
-3. Send only with `channel=SOURCE_CHANNEL_ID` and `thread_ts=SOURCE_THREAD_TS`.
-4. Read the thread again and verify the new message is a reply.
+1. Read the source thread by the fixed coordinates through the adapter.
+2. Confirm the source item exists, is not deleted, and still belongs to the source thread.
+3. Post only through the binding's adapter, at the verdict location.
+4. Read the source thread again and verify the new message is at the verdict location.
 
-If any check fails, post nothing. Never retry at the root or in a fallback channel.
+If any check fails, post nothing. Never retry at the source root or in a fallback location.
 
 ## 2. Wait for the triage contract
 
-Watch the source thread for the configured verdict budget. Stay silent while waiting.
+Watch the source thread through the adapter for the configured verdict budget. Stay silent while waiting.
 
 Accept a verdict only when:
 
-- Its author matches `slack.triage_identity_user_id`.
-- It is a reply under `SOURCE_THREAD_TS`.
+- Its author matches the binding's trusted verdict identity.
+- It is at the verdict location under the source thread.
 - It contains exactly one configured marker.
 
 Public marker forms:
@@ -87,7 +88,7 @@ This marker replaces private bot identities and free-form verdict matching.
 
 ## 3. Apply ownership and fix-artifact gates
 
-Re-read the thread immediately before starting work.
+Re-read the source thread through the adapter immediately before starting work.
 
 ### Someone is explicitly fixing it
 
@@ -106,15 +107,15 @@ Judge the requested action, not the presence of a bot.
 
 If an open pull request or merged commit plausibly fixes this report, switch to `references/verify-existing-fix.md`.
 
-An artifact may come from the thread, tracker issue, repository history, or pull request search. A claim without a commit or pull request is not a fix artifact.
+An artifact may come from the source thread, tracker issue, repository history, or pull request search. A claim without a commit or pull request is not a fix artifact.
 
 If a person owns the work but has not produced an artifact, stop. Do not race them.
 
-## 4. Open an optional operations thread
+## 4. Use the optional operations location
 
-If `slack.operations_channel_id` is configured, the coordinator may create one root status message there. This is the only allowed root post in the repro workflow.
+When the binding names a separate operations location, such as an operations thread, the coordinator may create one root status message there. This is the only allowed top-level post in the repro workflow. Store its coordinates as OPERATIONS_LOCATION and never confuse them with the source coordinates.
 
-Store its coordinates as `OPERATIONS_CHANNEL_ID` and `OPERATIONS_THREAD_TS`. Never confuse them with the source coordinates.
+When the binding names the run output, keep detailed status there and post no status message. Never substitute a source-thread root post.
 
 Use the configured plain Unicode status strings. Keep status text short:
 
@@ -127,9 +128,7 @@ Use the configured plain Unicode status strings. Keep status text short:
 - Draft pull request opened
 - Fix did not land
 
-Use the configured `benny-slack` CLI for every Slack read, post, and edit. Use `BENNY_SLACK_BOT_TOKEN` only when the CLI exposes it for a narrow missing capability such as editing this one status message. Never expose the token to a worker.
-
-If no operations channel is configured, keep detailed status in the run output. Do not substitute a source-channel root message.
+Use the binding's adapter for every source read, post, and edit. An adapter credential is used only for a narrow missing capability such as editing this one status message. Never expose the credential to a worker.
 
 ## 5. Load and check the verification adapter
 
@@ -164,7 +163,7 @@ Collect:
 - Attachments and error signatures
 - Candidate code area
 
-Inspect screenshots and video. Use read-only parallel workers for code history, test ideas, blast-radius mapping, and media review when useful. Each worker gets a narrow question and the Slack-write prohibition.
+Inspect screenshots and video. Use read-only parallel workers for code history, test ideas, blast-radius mapping, and media review when useful. Each worker gets a narrow question and the adapter-write prohibition.
 
 Use pstack's `how` skill to trace the action through the repository. Use `why` for regression history and defensive code. Form competing cause hypotheses and identify evidence that would separate them.
 
@@ -203,23 +202,23 @@ Have a read-only media reviewer answer one question: does the evidence visibly s
 
 If the answer is no or uncertain, the repro is not confirmed. Capture better evidence or use `Could not reproduce`.
 
-Post detailed evidence only in the operations thread when configured. Keep the source update concise.
+Post detailed evidence only in the operations location when configured. Keep the source update concise.
 
 ## 9. Report the repro outcome
 
 Update the operations status first.
 
-For `Could not reproduce` or `Blocked`, post nothing in the source thread. The operations thread or run output carries the result.
+For `Could not reproduce` or `Blocked`, post nothing in the source thread. The operations location or run output carries the result.
 
-For a confirmed repro, run the source preflight and post at most one unprompted source reply:
+For a confirmed repro, run the source preflight and post at most one unprompted verdict-location update:
 
 - Say the issue reproduced.
-- Link the operations evidence thread when one exists.
+- Link the operations evidence location when one exists.
 - Include at most three short findings.
 - Link the tracker issue when one exists.
 - Do not ping an owner by default.
 
-Attach evidence only when the configured `benny-slack` action keeps it inside the same source thread and the organization's retention policy allows it.
+Attach evidence only when the binding's adapter keeps it at the verdict location and the organization's retention policy allows it.
 
 Wait for the configured rejection window. If a person shows that the setup or interpretation was wrong, correct the repro once. Do not start the fix phase until the window closes without a valid rejection.
 
@@ -249,7 +248,7 @@ When the gate passes, update operations status to `Attempting bounded fix`.
 
 ## 12. Root-cause and implement
 
-The coordinator owns every Slack post, the final diff review, commits, and the pull request.
+The coordinator owns every source post, the final diff review, commits, and the pull request.
 
 Read-only workers may:
 
@@ -261,7 +260,7 @@ Read-only workers may:
 
 They do not edit, run external writes, post status, or own the fix.
 
-A tightly scoped code edit may be delegated during this phase only when tool isolation removes Slack credentials and every Slack write action from that worker. Its prompt must still carry the explicit Slack-write ban. The coordinator reviews the edit and runs or verifies the required tests. If tool isolation is uncertain, keep the edit in the coordinator.
+A tightly scoped code edit may be delegated during this phase only when tool isolation removes adapter credentials and every adapter write action from that worker. Its prompt must still carry the explicit adapter-write ban. The coordinator reviews the edit and runs or verifies the required tests. If tool isolation is uncertain, keep the edit in the coordinator.
 
 Confirm the mechanism with runtime evidence. Eliminate competing hypotheses before editing.
 
@@ -300,15 +299,15 @@ Only after before-and-after proof:
 - Link the configured tracker issue using the tracker's supported pull request syntax.
 - Use the configured public URL form, normally `https://github.com/{owner}/{repo}/pull/{number}`.
 - Include the repro steps, root cause, test result, before and after evidence, and blast-radius checks.
-- Run the pull request text and all Slack updates through pstack's `unslop` skill.
+- Run the pull request text and all source updates through pstack's `unslop` skill.
 
 If pull request creation fails, do not claim success. Keep the commit or branch state in the run output and mark operations status `Fix did not land`.
 
-On success, mark operations status `Draft pull request opened` and post one concise reply in the operations thread with the linked pull request. Do not create a second source-channel root or unprompted source reply.
+On success, mark operations status `Draft pull request opened` and post one concise reply in the operations location with the linked pull request. Do not create a second source-thread root or unprompted source reply.
 
 ## 15. Follow-ups and cleanup
 
-Watch the configured operations thread for one follow-up window.
+Watch the configured operations location for one follow-up window.
 
 - Answer a direct question from evidence already gathered.
 - Apply one concrete correction and rerun the repro once when it invalidates the setup.

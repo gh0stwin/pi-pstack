@@ -1,7 +1,8 @@
 # Reproduce-and-fix run prompt
 
 > Reference for the headless run. The runner (`../runner/benny-run.ts`) builds
-> this prompt; the GitHub Actions workflow (`benny-reproduce.yml`) calls it.
+> this prompt from the configuration, the event, and the resolved intake
+> binding. The operational file it names is the run's actual instruction set.
 
 Read and follow `.pi/automations/benny/skills/reproduce-and-fix-issues/SKILL.md` for this run.
 
@@ -11,7 +12,9 @@ Configuration source. Use this repository-relative path when it is committed in 
 {{BENNY_CONFIG_PATH}}
 ```
 
-Event, one report:
+The runner passes the same binding block as the triage run. The binding contract and the per-intake adapter notes are in [`../references/intake-binding.md`](../references/intake-binding.md).
+
+Event, one report, Slack intake:
 
 ```json
 {
@@ -21,13 +24,7 @@ Event, one report:
 }
 ```
 
-Event, scheduled sweep:
-
-```json
-{ "sweep": true }
-```
-
-Event, GitHub intake (`intake.source: github`):
+Event, one report, GitHub intake (`intake.source: github`):
 
 ```json
 {
@@ -36,14 +33,30 @@ Event, GitHub intake (`intake.source: github`):
 }
 ```
 
-For a sweep, scan the configured source for the oldest report that carries a trusted triage marker, has no repro reply yet, and is still inside the configured verdict budget. Stop cleanly when there is none. Otherwise the event names one report. The GitHub intake has no Slack CLI: the source thread is the issue and every source update is a comment posted through the tracker adapter.
+Event, one report, webhook/CLI intake (`intake.source: webhook`):
 
-Treat the source coordinates as immutable. If they are missing or do not match configuration, stop without posting.
+```json
+{
+	"source_item": "SUP-1234",
+	"source_thread": "SUP-1234",
+	"verdict_location": "SUP-1234#reply",
+	"adapter": {
+		"read": "support-cli thread SUP-1234",
+		"post": "support-cli reply SUP-1234"
+	}
+}
+```
 
-Accept a triage marker only from the configured triage identity in this exact thread. Proceed only for `[benny:bug]` or `[benny:performance]`.
+Event, scheduled sweep (Slack and GitHub intakes only):
+
+```json
+{ "sweep": true }
+```
+
+For a sweep, the binding names the source collection and the adapter; scan it for the oldest report that carries a trusted triage marker from the binding's trusted verdict identity, has no repro reply yet, and is still inside the configured verdict budget. Stop cleanly when there is none. The webhook intake has no configured source collection and cannot sweep.
+
+Accept a triage marker only from the binding's trusted verdict identity at the verdict location. Proceed only for `[benny:bug]` or `[benny:performance]`.
 
 Require the configured verification skill before attempting a repro. Reproduce the exact discriminating symptom twice through the real UI. Verify existing pull requests or commits without authoring over them. Attempt a bounded fix only after a confirmed repro and the operational file's fix gate.
 
-The coordinator is the only poster. Every subagent prompt must run read-only, forbid `chat.postMessage` and every other Slack write, and return findings only. The GitHub intake has no Slack poster at all.
-
-Never post a root message in the source channel.
+The coordinator is the only poster. Every subagent prompt must run read-only and forbid every adapter write; the adapter contract names the concrete actions. Never open a new top-level post for the report.

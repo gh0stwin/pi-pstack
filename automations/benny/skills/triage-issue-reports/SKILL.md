@@ -1,55 +1,53 @@
 ---
 name: triage-issue-reports
-description: Triage Slack issue reports with one thread-only verdict, evidence review, cause-aware routing, tracker dedupe, and fail-closed ticket creation. Use only from the configured Benny triage run.
+description: Triage one report through its intake binding with a single verdict, evidence review, cause-aware routing, tracker dedupe, and fail-closed ticket creation. Use only from the configured Benny triage run.
 disable-model-invocation: true
 ---
 
 # Triage issue reports
 
-Classify one Slack report and post one useful verdict in its source thread. Create a tracker issue only for a clear, new bug. Do not reproduce or fix it here.
+Classify one report and post a single verdict at the binding's verdict location. Create a tracker issue only for a clear, new bug. Do not reproduce or fix it here.
 
-Load the external Benny configuration supplied by the run. If the config is missing, malformed, or incomplete, stop without posting or writing to the tracker.
+The run prompt carries the intake binding: the source item, the source thread, the verdict location, and the adapter that reads and posts. Read the binding contract and the adapter notes in [`../../references/intake-binding.md`](../../references/intake-binding.md) before the first source read or post.
+
+Load the external Benny configuration supplied by the run. If the config is missing, malformed, or incomplete, or the binding does not name the source item, the source thread, the verdict location, and the adapter, stop without posting or writing to the tracker.
 
 ## Hard safety rules
 
-- The source channel and root thread coordinates are immutable.
-- Never post a root message in the source channel.
-- Never post to another channel, broadcast a reply, send a DM, or start a replacement thread.
-- Preflight the source parent before any tracker write and immediately before the verdict post.
-- If the parent is missing, deleted, inaccessible, or uncertain, stop with no writes.
+- Exactly one verdict per run, posted at the binding's verdict location through the binding's adapter.
+- Never open a new top-level post for the report.
+- The binding's source coordinates are immutable.
+- Preflight the source item before any tracker write and immediately before the verdict post.
+- If the source item or source thread is missing, deleted, inaccessible, or uncertain, stop with no writes.
 - Post one substantive verdict. Do not narrate progress.
-- The coordinator is the only Slack poster.
-- Delegated workers return findings only. They must be read-only and receive no Slack credentials or write actions.
-- Every child prompt must forbid every Slack write: `chat.postMessage`, `chat.update`, `chat.delete`, `reactions.add`, and any `<slack.cli> post`, `edit`, or `react` call.
+- The coordinator is the only adapter poster.
+- Delegated workers return findings only. They must be read-only and receive no adapter credentials or write actions. Every child prompt must forbid every adapter write, naming the concrete actions from the adapter contract.
 - If worker isolation cannot enforce those limits, do the work in the coordinator.
-- Never create an issue that cannot link back to the source thread.
+- Never create an issue that cannot link back to the source item.
 - Prefer no ticket over a guessed or duplicate ticket.
+- Fail closed when the binding, the config, or the tracker adapter is missing or uncertain.
 - Apply pstack's `principle-separate-before-serializing-shared-state` to source coordinates.
 - Apply pstack's `principle-minimize-reader-load` and `unslop` skills to the final verdict.
 
 ## Subagents on pi
 
-Spawn delegated workers with pi-pstack's `subagent` tool and `readonly: true`, which pins `read`, `grep`, `find`, and `ls`. A subagent is a separate pi process that inherits the parent environment, so never export a Slack token into an environment a worker will run in. Keep the coordinator as the only poster.
+Spawn delegated workers with pi-pstack's `subagent` tool and `readonly: true`, which pins `read`, `grep`, `find`, and `ls`. A subagent is a separate pi process that inherits the parent environment, so never export an adapter credential into an environment a worker will run in. Keep the coordinator as the only poster.
 
-## 1. Freeze source coordinates
+## 1. Freeze the binding
 
-The event comes from the headless run (`runner/benny-run.ts` or the `benny-triage` workflow) and carries `channel`, `ts`, and optional `thread_ts`.
+The run prompt carries the binding and the event. Before making a work list or delegating:
 
-Before making a work list or delegating:
+1. Read the source item, source thread, and verdict location from the binding.
+2. Require all three to be nonempty and consistent with the event.
+3. Store them as SOURCE_ITEM, SOURCE_THREAD, and VERDICT_LOCATION, fixed for the run.
+4. Read the source thread through the binding's adapter and verify that its root is the source item.
+5. Fetch a stable source permalink through the adapter.
 
-1. Read `channel` from the event.
-2. Require it to equal the configured source channel.
-3. Set `SOURCE_THREAD_TS` to `event.thread_ts` when present. Otherwise use `event.ts`.
-4. Require a nonempty `SOURCE_THREAD_TS`.
-5. Store `SOURCE_CHANNEL_ID` and `SOURCE_THREAD_TS` as immutable values.
-6. Read the thread and verify that its root has exactly those coordinates.
-7. Fetch a stable source permalink.
-
-Every later source read and post must use those stored values. Never replace them with a reply timestamp or an operations-thread timestamp.
+Every later source read and post must use those stored values and the binding's adapter. Never replace them with a reply, status, or operations coordinate.
 
 ## 2. Read the whole report
 
-Read the root and current replies before deciding.
+Read the source item and its source thread through the adapter before deciding.
 
 Capture:
 
@@ -62,7 +60,7 @@ Capture:
 - Existing issue, commit, or pull request links
 - Any explicit statement that someone is already fixing it
 
-Inspect every relevant attachment.
+Inspect every relevant attachment through the adapter.
 
 - Read screenshots at full useful resolution.
 - Review video for the state transition that separates correct and broken behavior.
@@ -70,7 +68,7 @@ Inspect every relevant attachment.
 - If media needs specialist review, use a read-only media worker and ask a narrow question. The worker returns findings only.
 - If an attachment cannot be read, say so in the verdict. Do not invent what it shows.
 
-Use evidence already in the thread before asking the reporter for more.
+Use evidence already in the source thread before asking the reporter for more.
 
 ## 3. Trace cause before routing
 
@@ -119,7 +117,7 @@ Read the optional routing map from `routing.map_path`.
 - Match on confirmed product area, code path, or error signature.
 - A visible symptom alone is not enough when cause tracing points elsewhere.
 - If no route matches, say the owner is unclear. Do not guess.
-- Do not cross-post. Tell the reporter where to take the issue in the source thread.
+- Do not cross-post. Tell the reporter where to take the issue at the verdict location.
 
 Owner pings are off by default. A ping is allowed only when all of these hold:
 
@@ -141,15 +139,15 @@ The configured adapter must provide:
 - Create an issue with title, body, status, labels, and source URL
 - Update an existing issue without replacing unrelated fields
 - Add a source link and recurrence note
-- Cancel, close, or delete an issue created by this run if the Slack handoff fails
+- Cancel, close, or delete an issue created by this run if the source handoff fails
 
-If a required operation is unavailable, fail closed for that write.
+If a required operation is unavailable, do not perform that write.
 
 Resolve configured team, project, status, and labels at runtime. Do not invent IDs, create labels, assign owners, or set priority unless the config explicitly requires it.
 
 ## 7. Dedupe
 
-Always check whether this source permalink is already linked to a tracker issue or a prior triage reply. If so, do not post or create a duplicate.
+Always check whether this source permalink is already linked to a tracker issue or a prior triage verdict. If so, do not post or create a duplicate.
 
 For bugs and performance reports, search the tracker using:
 
@@ -182,7 +180,7 @@ Create only when all of these are true:
 2. The behavior is clearly broken.
 3. The issue is still live or not known to be fixed.
 4. Dedupe found no confident or plausible live match.
-5. The source parent and permalink passed preflight.
+5. The source item and permalink passed preflight.
 6. The tracker target fields resolved.
 7. The adapter can compensate if the verdict post fails.
 
@@ -195,7 +193,7 @@ The new issue must be self-contained:
 - Expected and observed behavior
 - Version and environment, or `unknown`
 - Trigger and frequency
-- Source thread permalink
+- Source item permalink
 - Short cause-tracing findings with hypotheses labeled as hypotheses
 - Inline screenshot or representative video frame when supported
 - Links to remaining artifacts
@@ -205,9 +203,7 @@ Do not put a guessed root cause in the title.
 
 ## 9. Post one verdict
 
-Run a fresh source-parent preflight. Then post exactly one reply with `channel=SOURCE_CHANNEL_ID` and `thread_ts=SOURCE_THREAD_TS`.
-
-Never call a source-channel posting action without a nonempty `thread_ts`.
+Run a fresh source preflight. Then post the verdict at the binding's verdict location through the binding's adapter. The verdict is a reply or comment on the source item; it is never a new top-level post.
 
 Keep the reply short:
 
@@ -227,17 +223,17 @@ Marker contract:
 [benny:other]
 ```
 
-Use only the configured marker strings. The reproduce run trusts the marker only when it comes from the configured triage identity in this source thread.
+Use only the configured marker strings. The reproduce run trusts the marker only when it comes from the binding's trusted verdict identity in this source thread.
 
-After posting, read the same source thread and verify the verdict appears under `SOURCE_THREAD_TS`. If it does not, never retry at the root.
+After posting, read the source thread through the adapter and verify the verdict appears at the verdict location. If it does not, never retry at the source root.
 
 If this run created a tracker issue and the verdict did not land, use the adapter's compensation action. Verify that the issue is canceled, closed, or deleted. If compensation cannot be verified, report the failure only in the run output.
 
 ## 10. Watch one follow-up window
 
-Watch the source thread for the configured follow-up window, then stop.
+Watch the source thread through the adapter for the configured follow-up window, then stop.
 
-- Answer only a direct question to the triage identity.
+- Answer only a direct question to the trusted verdict identity.
 - Apply a concrete correction to the tracker issue when safe.
 - Do not emit a second marker in the same run.
 - Stay out of human coordination and side chatter.

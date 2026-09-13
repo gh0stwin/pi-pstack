@@ -278,6 +278,46 @@ function asRecord(value: YamlValue, key: string): Record<string, YamlValue> {
   return nested as Record<string, YamlValue>;
 }
 
+it("ships webhook-intake workflows that pass the event binding and carry no Slack values", () => {
+  const cases = [
+    { file: "benny-webhook-triage.yml", mode: "triage", types: ["benny-report"] },
+    { file: "benny-webhook-reproduce.yml", mode: "reproduce", types: ["benny-report", "benny-reproduce"] },
+  ];
+
+  for (const { file, mode, types } of cases) {
+    const workflow = parseYaml(readFileSync(join(packageRoot, "automations", "benny", "templates", file), "utf8"));
+
+    const dispatch = asRecord(asRecord(workflow, "on"), "repository_dispatch");
+    expect(dispatch.types).toEqual(types);
+
+    const job = asRecord(workflow, "jobs");
+    const jobName = Object.keys(job)[0];
+    const body = asRecord(job, jobName);
+
+    const steps = body.steps;
+    expect(Array.isArray(steps)).toBe(true);
+    const step = (steps as YamlValue[]).find((entry) => {
+      const run = (entry as Record<string, YamlValue>).run;
+      return typeof run === "string" && runnerInvocation(run) !== undefined;
+    });
+    const runRecord = step as Record<string, YamlValue>;
+
+    const env = runRecord.env as Record<string, YamlValue>;
+    expect(env.PI_PROVIDER_KEY).toBeDefined();
+    expect(env.BENNY_BINDING).toBeDefined();
+    expect(env.BENNY_SLACK_BOT_TOKEN).toBeUndefined();
+
+    const tokens = runnerInvocation(String(runRecord.run));
+    expect(tokens).toBeDefined();
+    const invocation = tokens as string[];
+    expect(invocation).toContain(".pi/automations/benny/runner/benny-run.ts");
+    const modeIndex = invocation.indexOf("--mode");
+    expect(modeIndex >= 0).toBe(true);
+    expect(invocation[modeIndex + 1]).toBe(mode);
+    expect(invocation).toContain("--event");
+  }
+});
+
 it("ships GitHub-intake workflows that drive the runner with the no-Slack event, guard, and env", () => {
   const cases = [
     { file: "benny-github-triage.yml", mode: "triage", intakeLabel: "triage", types: ["opened", "reopened", "labeled"] },

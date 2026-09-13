@@ -1,0 +1,65 @@
+# Benny reproduce-and-fix for the generic webhook/CLI intake. Copy to
+# .github/workflows/benny-webhook-reproduce.yml in the target repository and
+# adjust the pi install step.
+#
+# Use this pair when the configuration sets `intake.source: webhook`. The
+# source hands the runner a complete binding; see benny-webhook-triage.yml for
+# the payload shape. The reproduce workflow accepts the same `benny-report`
+# dispatch as triage and an explicit `benny-reproduce` dispatch for a run that
+# starts later.
+#
+# The webhook intake has no configured source collection, so it cannot sweep:
+# a scheduled sweep needs the Slack or GitHub intake. Keep `draft_only: true`
+# in the configuration. This workflow never merges.
+name: benny-webhook-reproduce
+
+on:
+  repository_dispatch:
+    types: [benny-report, benny-reproduce]
+  workflow_dispatch:
+    inputs:
+      binding:
+        description: "Binding JSON: source_item, source_thread, verdict_location, adapter.read, adapter.post"
+        required: true
+
+concurrency:
+  group: benny-reproduce
+  cancel-in-progress: false
+
+jobs:
+  reproduce:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install pi
+        run: npm install -g --ignore-scripts @earendil-works/pi-coding-agent
+
+      - name: Install project packages
+        run: pi install -l git:github.com/gh0stwin/pi-pstack
+
+      - name: Reproduce and fix
+        env:
+          PI_PROVIDER_KEY: ${{ secrets.PI_PROVIDER_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BENNY_DISPATCH: ${{ toJSON(github.event.client_payload) }}
+          BENNY_BINDING: ${{ inputs.binding }}
+        run: |
+          set -euo pipefail
+          event="$BENNY_DISPATCH"
+          case "$event" in '' | '{}' | 'null') event="$BENNY_BINDING" ;; esac
+          node .pi/automations/benny/runner/benny-run.ts \
+            --mode reproduce \
+            --config .pi/benny/configuration.yaml \
+            --event "$event"

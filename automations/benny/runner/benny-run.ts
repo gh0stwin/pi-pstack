@@ -3,22 +3,27 @@
  * Local runner for the Benny automations.
  *
  * Benny is two headless pi jobs: one triages a report, one reproduces and
- * optionally fixes a confirmed bug. This runner builds the same prompt the
- * GitHub Actions workflows build and either prints or executes the `pi`
- * invocation. The operational instructions live in the pack's SKILL.md files;
- * this file only resolves the config, the model, the intake source, and the
- * event coordinates.
+ * optionally fixes a confirmed bug. This runner resolves the config, the model,
+ * the intake, and the event, builds the intake binding, and either prints or
+ * executes the `pi` invocation. The operational instructions live in the pack's
+ * SKILL.md files; this file only resolves and validates the run inputs.
  *
- * The intake is opt-in. A config with `slack.cli` (or `intake.source: slack`)
- * uses the repository's Slack CLI. A config with no Slack section (or
- * `intake.source: github`) uses the GitHub issue or CLI path instead, so a
- * user who does not use Slack can install and run Benny without it.
+ * An intake binding names the source item, the source thread, the single
+ * verdict location, and the adapter that reads and posts. The runner passes the
+ * binding in the prompt, so the operational files never assume a source.
+ *
+ * The intake is opt-in. `intake.source` selects it; when unset, a Slack section
+ * infers the Slack intake and anything else infers GitHub. The webhook intake
+ * takes the whole binding from the event and needs no configuration section.
  *
  * Usage:
  *   node benny-run.ts --mode triage --config .pi/benny/configuration.yaml \
  *     --event '{"channel":"C0123","ts":"1700000000.000100"}'
  *   node benny-run.ts --mode triage --config .pi/benny/configuration.yaml \
  *     --event '{"issue":123,"url":"https://github.com/org/repo/issues/123"}'
+ *   node benny-run.ts --mode triage --config .pi/benny/configuration.yaml \
+ *     --event '{"source_item":"SUP-1234","verdict_location":"SUP-1234#reply",\
+ *       "adapter":{"read":"support-cli thread SUP-1234","post":"support-cli reply SUP-1234"}}'
  *
  * Options:
  *   --mode <triage|reproduce>  which operational file to run (required)
@@ -38,12 +43,15 @@ import { fileURLToPath } from "node:url";
 export type Mode = "triage" | "reproduce";
 
 /** Where a run gets its report from. Slack is one option, not the default install. */
-export type IntakeSource = "slack" | "github";
+export type IntakeSource = "slack" | "github" | "webhook";
 
 export const OPERATIONAL_FILES: Readonly<Record<Mode, string>> = {
   triage: ".pi/automations/benny/skills/triage-issue-reports/SKILL.md",
   reproduce: ".pi/automations/benny/skills/reproduce-and-fix-issues/SKILL.md",
 };
+
+/** The binding contract both operational files read. */
+export const BINDING_REFERENCE = ".pi/automations/benny/references/intake-binding.md";
 
 export interface RunnerOptions {
   readonly mode: Mode;
@@ -58,7 +66,35 @@ export interface IntakeConfig {
   readonly source: IntakeSource;
   readonly slackCli?: string;
   readonly slackSourceChannelId?: string;
+  readonly slackOperationsChannelId?: string;
+  readonly slackTriageIdentity?: string;
   readonly repositoryUrl?: string;
+  readonly trackerAdapter?: string;
+}
+
+/** The adapter that reads the source thread and posts at the verdict location. */
+export interface IntakeAdapter {
+  readonly name: string;
+  readonly read: string;
+  readonly post: string;
+}
+
+/**
+ * The four names every intake supplies, plus the two run locations the
+ * operational files use when the intake has them.
+ */
+export interface IntakeBinding {
+  readonly source: IntakeSource;
+  readonly sourceItem: string;
+  readonly sourceThread: string;
+  readonly verdictLocation: string;
+  readonly adapter: IntakeAdapter;
+  readonly verdictIdentity: string;
+  readonly operationsLocation: string;
+}
+
+export interface RunnerError {
+  readonly error: string;
 }
 
 /**
@@ -101,28 +137,43 @@ export function hasConfigSection(text: string, section: string): boolean {
 /**
  * Resolve the intake source. `intake.source` wins when present; otherwise the
  * configured section decides, so existing Slack configs keep working and a
- * config without `slack.cli` falls through to the GitHub path.
+ * config without `slack.cli` falls through to the GitHub path. The webhook
+ * intake is explicit: it has no section and takes its binding from the event.
  */
-export function resolveIntake(text: string): IntakeConfig | { readonly error: string } {
+export function resolveIntake(text: string): IntakeConfig | RunnerError {
   const declared = readConfigValue(text, "intake.source");
   const slackCli = readConfigValue(text, "slack.cli");
   const slackSourceChannelId = readConfigValue(text, "slack.source_channel_id");
+  const slackOperationsChannelId = readConfigValue(text, "slack.operations_channel_id");
+  const slackTriageIdentity = readConfigValue(text, "slack.triage_identity_user_id");
   const repositoryUrl = readConfigValue(text, "repository.url");
+  const trackerAdapter = readConfigValue(text, "tracker.adapter");
   const slackSection = hasConfigSection(text, "slack");
   const repositorySection = hasConfigSection(text, "repository");
 
-  if (declared !== undefined && declared !== "slack" && declared !== "github") {
-    return { error: `intake.source must be "slack" or "github", got "${declared}"` };
+  if (declared !== undefined && declared !== "slack" && declared !== "github" && declared !== "webhook") {
+    return { error: `intake.source must be "slack", "github", or "webhook", got "${declared}"` };
   }
   if (declared === undefined && slackCli === undefined && repositoryUrl === undefined && !slackSection && !repositorySection) {
     return { error: "no intake source: set intake.source, or configure slack.cli (Slack) or repository.url (GitHub)" };
   }
 
   const source: IntakeSource = declared ?? (slackCli !== undefined || slackSection ? "slack" : "github");
-  return { source, slackCli, slackSourceChannelId, repositoryUrl };
+  return {
+    source,
+    slackCli,
+    slackSourceChannelId,
+    slackOperationsChannelId,
+    slackTriageIdentity,
+    repositoryUrl,
+    trackerAdapter,
+  };
 }
 
-/** Fail-closed checks for the inputs a run needs. Credentials live with the CLI. */
+/**
+ * Fail-closed checks for the config values each intake needs to name its
+ * binding. The webhook intake needs none: its event carries the whole binding.
+ */
 export function validateIntake(intake: IntakeConfig): string[] {
   if (intake.source === "slack") {
     const errors: string[] = [];
@@ -130,52 +181,239 @@ export function validateIntake(intake: IntakeConfig): string[] {
     if (intake.slackSourceChannelId === undefined) errors.push("slack.source_channel_id is required for the Slack intake");
     return errors;
   }
-  return intake.repositoryUrl === undefined ? ["repository.url is required for the GitHub intake"] : [];
+  if (intake.source === "github") {
+    const errors: string[] = [];
+    if (intake.repositoryUrl === undefined) errors.push("repository.url is required for the GitHub intake");
+    if (intake.trackerAdapter === undefined) errors.push("tracker.adapter is required for the GitHub intake");
+    return errors;
+  }
+  return [];
 }
 
-/** Check the trigger payload against the mode and the configured intake. */
-export function validateEvent(eventText: string, mode: Mode, source: IntakeSource): string | undefined {
+/** Parse the event payload, failing closed on malformed JSON or a non-object. */
+export function parseEvent(eventText: string): { readonly event: Record<string, unknown> } | RunnerError {
   let parsed: unknown;
   try {
     parsed = JSON.parse(eventText);
   } catch {
-    return "--event must be valid JSON";
+    return { error: "--event must be valid JSON" };
   }
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    return "--event must be a JSON object";
+    return { error: "--event must be a JSON object" };
   }
-  const event = parsed as Record<string, unknown>;
-  if (mode === "reproduce" && event.sweep === true) return undefined;
+  return { event: parsed as Record<string, unknown> };
+}
+
+function eventString(event: Record<string, unknown>, key: string): string | undefined {
+  const value = event[key];
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed === "" ? undefined : trimmed;
+}
+
+function optionalEventString(event: Record<string, unknown>, key: string): { readonly value?: string } | RunnerError {
+  if (event[key] === undefined) return {};
+  const value = eventString(event, key);
+  if (value === undefined) return { error: `event.${key} must be a non-empty string when present` };
+  return { value };
+}
+
+function githubIssueNumber(event: Record<string, unknown>): number | undefined {
+  const issue = event.issue;
+  if (typeof issue === "number" && Number.isInteger(issue) && issue > 0) return issue;
+  if (typeof issue === "string" && /^\d+$/.test(issue)) return Number(issue);
+  const url = eventString(event, "url");
+  const match = url === undefined ? null : /\/issues\/(\d+)$/.exec(url);
+  return match === null ? undefined : Number(match[1]);
+}
+
+/** True when `location` names `item` as a whole token, not a fragment of a longer id. */
+export function namesSameItem(location: string, item: string): boolean {
+  const isIdentifier = (char: string | undefined): boolean => char !== undefined && /[A-Za-z0-9]/.test(char);
+  let index = location.indexOf(item);
+  while (index !== -1) {
+    const before = index === 0 ? undefined : location[index - 1];
+    const after = index + item.length >= location.length ? undefined : location[index + item.length];
+    if (!isIdentifier(before) && !isIdentifier(after)) return true;
+    index = location.indexOf(item, index + 1);
+  }
+  return false;
+}
+
+/**
+ * Validate the webhook payload and build its binding. Fail closed on a missing
+ * field, a non-string value, a multi-line adapter command, or a verdict
+ * location that names a different item than the source item.
+ */
+export function webhookBinding(event: Record<string, unknown>): IntakeBinding | RunnerError {
+  const sourceItem = eventString(event, "source_item");
+  if (sourceItem === undefined) return { error: "event.source_item is required for the webhook intake" };
+  const verdictLocation = eventString(event, "verdict_location");
+  if (verdictLocation === undefined) return { error: "event.verdict_location is required for the webhook intake" };
+  if (!namesSameItem(verdictLocation, sourceItem)) {
+    return { error: "event.verdict_location must name the same item as event.source_item" };
+  }
+
+  const adapter = event.adapter;
+  if (typeof adapter !== "object" || adapter === null || Array.isArray(adapter)) {
+    return { error: "event.adapter with read and post commands is required for the webhook intake" };
+  }
+  const adapterRecord = adapter as Record<string, unknown>;
+  const adapterRead = eventString(adapterRecord, "read");
+  if (adapterRead === undefined) return { error: "event.adapter.read is required for the webhook intake" };
+  const adapterPost = eventString(adapterRecord, "post");
+  if (adapterPost === undefined) return { error: "event.adapter.post is required for the webhook intake" };
+  if (/[\r\n]/.test(adapterRead)) return { error: "event.adapter.read must be a single line" };
+  if (/[\r\n]/.test(adapterPost)) return { error: "event.adapter.post must be a single line" };
+
+  const sourceThread = optionalEventString(event, "source_thread");
+  if ("error" in sourceThread) return sourceThread;
+  const verdictIdentity = optionalEventString(event, "verdict_identity");
+  if ("error" in verdictIdentity) return verdictIdentity;
+
+  return {
+    source: "webhook",
+    sourceItem,
+    sourceThread: sourceThread.value ?? sourceItem,
+    verdictLocation,
+    adapter: { name: "the adapter named by the event", read: adapterRead, post: adapterPost },
+    verdictIdentity: verdictIdentity.value ?? "the identity the adapter posts as",
+    operationsLocation: "the run output",
+  };
+}
+
+/** Check the trigger payload against the mode and the configured intake. */
+export function validateEvent(eventText: string, mode: Mode, source: IntakeSource): string | undefined {
+  const parsed = parseEvent(eventText);
+  if ("error" in parsed) return parsed.error;
+  const event = parsed.event;
+
+  if (mode === "reproduce" && event.sweep === true) {
+    return source === "webhook" ? "the webhook intake cannot sweep: send an explicit binding" : undefined;
+  }
 
   if (source === "slack") {
-    if (typeof event.channel !== "string" || event.channel === "") {
-      return "event.channel is required for the Slack intake";
-    }
-    if (typeof event.ts !== "string" || event.ts === "") {
-      return "event.ts is required for the Slack intake";
-    }
+    if (eventString(event, "channel") === undefined) return "event.channel is required for the Slack intake";
+    if (eventString(event, "ts") === undefined) return "event.ts is required for the Slack intake";
     if (event.thread_ts !== undefined && typeof event.thread_ts !== "string") {
       return "event.thread_ts must be a string when present";
     }
     return undefined;
   }
 
-  const issue = event.issue;
-  const issueNumber =
-    typeof issue === "number" && Number.isInteger(issue) && issue > 0
-      ? issue
-      : typeof issue === "string" && /^\d+$/.test(issue)
-        ? Number(issue)
-        : undefined;
-  const url = event.url;
-  const urlMatch = typeof url === "string" ? /\/issues\/(\d+)$/.exec(url) : null;
-  if (issueNumber === undefined && urlMatch === null) {
-    return "event.issue (positive integer) or event.url (/issues/<number>) is required for the GitHub intake";
+  if (source === "github") {
+    const issue = event.issue;
+    const issueNumber =
+      typeof issue === "number" && Number.isInteger(issue) && issue > 0
+        ? issue
+        : typeof issue === "string" && /^\d+$/.test(issue)
+          ? Number(issue)
+          : undefined;
+    const url = event.url;
+    const urlMatch = typeof url === "string" ? /\/issues\/(\d+)$/.exec(url) : null;
+    if (issueNumber === undefined && urlMatch === null) {
+      return "event.issue (positive integer) or event.url (/issues/<number>) is required for the GitHub intake";
+    }
+    if (issueNumber !== undefined && urlMatch !== null && Number(urlMatch[1]) !== issueNumber) {
+      return "event.issue and event.url must name the same issue";
+    }
+    return undefined;
   }
-  if (issueNumber !== undefined && urlMatch !== null && Number(urlMatch[1]) !== issueNumber) {
-    return "event.issue and event.url must name the same issue";
+
+  const binding = webhookBinding(event);
+  return "error" in binding ? binding.error : undefined;
+}
+
+function slackBinding(intake: IntakeConfig, event: Record<string, unknown>, sweep: boolean): IntakeBinding {
+  const cli = intake.slackCli ?? "the configured slack.cli";
+  const operationsLocation =
+    intake.slackOperationsChannelId !== undefined
+      ? `one status thread in the configured operations channel ${intake.slackOperationsChannelId}`
+      : "the run output";
+  const verdictIdentity = intake.slackTriageIdentity ?? "the configured Slack triage identity";
+
+  if (sweep) {
+    const channel = intake.slackSourceChannelId ?? "the configured source channel";
+    return {
+      source: "slack",
+      sourceItem: `the source collection: the configured source channel ${channel} (pick the oldest report with a trusted triage marker and no repro reply yet)`,
+      sourceThread: `the chosen report's source thread in channel ${channel}`,
+      verdictLocation: "exactly one reply in the chosen report's source thread",
+      adapter: {
+        name: `Slack CLI ${cli}`,
+        read: `${cli} thread <channel> <thread_ts>`,
+        post: `${cli} post <channel> <thread_ts> <text>`,
+      },
+      verdictIdentity,
+      operationsLocation,
+    };
   }
-  return undefined;
+
+  const channel = eventString(event, "channel") ?? intake.slackSourceChannelId ?? "the configured source channel";
+  const ts = eventString(event, "ts") ?? "<report ts>";
+  const threadTs = eventString(event, "thread_ts") ?? ts;
+  return {
+    source: "slack",
+    sourceItem: `the Slack report message in channel ${channel} at ts ${ts}`,
+    sourceThread: `the thread rooted at thread_ts ${threadTs} in channel ${channel}`,
+    verdictLocation: `exactly one reply in that thread (channel ${channel}, thread_ts ${threadTs})`,
+    adapter: {
+      name: `Slack CLI ${cli}`,
+      read: `${cli} thread ${channel} ${threadTs}`,
+      post: `${cli} post ${channel} ${threadTs} <text>`,
+    },
+    verdictIdentity,
+    operationsLocation,
+  };
+}
+
+function githubBinding(intake: IntakeConfig, event: Record<string, unknown>, sweep: boolean): IntakeBinding {
+  const adapterName = intake.trackerAdapter ?? "the configured tracker adapter";
+  const repository = intake.repositoryUrl ?? "the configured repository";
+  const adapter: IntakeAdapter = {
+    name: `the tracker adapter "${adapterName}"`,
+    read: "read the source issue and its comments through the tracker adapter",
+    post: "post exactly one comment on the source issue through the tracker adapter",
+  };
+  const verdictIdentity = "the tracker identity that posts the verdict";
+
+  if (sweep) {
+    return {
+      source: "github",
+      sourceItem: `the source collection: the issues in ${repository} (pick the oldest issue with a trusted triage marker and no repro reply yet)`,
+      sourceThread: "the chosen issue and its comments",
+      verdictLocation: "exactly one comment on the chosen issue",
+      adapter,
+      verdictIdentity,
+      operationsLocation: "the run output",
+    };
+  }
+
+  const issueNumber = githubIssueNumber(event);
+  const url = eventString(event, "url");
+  const item =
+    issueNumber === undefined
+      ? `the GitHub issue named by the event${url === undefined ? "" : ` (${url})`}`
+      : `GitHub issue #${issueNumber}${url === undefined ? ` in ${repository}` : ` (${url})`}`;
+  return {
+    source: "github",
+    sourceItem: item,
+    sourceThread: "that issue and its comments",
+    verdictLocation: "exactly one comment on that issue",
+    adapter,
+    verdictIdentity,
+    operationsLocation: "the run output",
+  };
+}
+
+/** Build the binding the operational file will follow for this run. */
+export function buildBinding(intake: IntakeConfig, eventText: string, mode: Mode): IntakeBinding | RunnerError {
+  const parsed = parseEvent(eventText);
+  if ("error" in parsed) return parsed;
+  const event = parsed.event;
+  if (intake.source === "webhook") return webhookBinding(event);
+  const sweep = mode === "reproduce" && event.sweep === true;
+  return intake.source === "slack" ? slackBinding(intake, event, sweep) : githubBinding(intake, event, sweep);
 }
 
 export function resolveModel(options: RunnerOptions, configText: string): string | undefined {
@@ -184,51 +422,41 @@ export function resolveModel(options: RunnerOptions, configText: string): string
   return configured === "inherit-parent" || configured === "auto" ? undefined : configured;
 }
 
-export function buildPrompt(options: RunnerOptions, intake: IntakeConfig | IntakeSource = "slack"): string {
-  const config: IntakeConfig = typeof intake === "string" ? { source: intake } : intake;
+export function buildPrompt(options: RunnerOptions, binding: IntakeBinding): string {
   const operational = join(options.repo, OPERATIONAL_FILES[options.mode]);
-  const header = [
+  const reference = join(options.repo, BINDING_REFERENCE);
+  return [
     `Read and follow ${operational} for this run.`,
     `Configuration: ${options.configPath}`,
     `Event: ${options.event}`,
-    `Intake: ${config.source === "slack" ? "Slack" : "GitHub issues"}.`,
-  ];
-  if (config.source === "slack") {
-    return [
-      ...header,
-      `Slack CLI: ${config.slackCli ?? "the configured slack.cli"}.`,
-      "Freeze the source channel and root thread from the event and post the single verdict only as a reply in that thread.",
-      "",
-      "Apply the pack's hard safety rules: never post a root message in the source",
-      "channel, keep the source coordinates immutable, and fail closed when the",
-      "configuration, Slack CLI, tracker adapter, or verification skill is missing.",
-    ].join("\n");
-  }
-  return [
-    ...header,
-    "No Slack CLI is configured. Do not call Slack or any Slack API. Treat the issue",
-    "named by the event as the source thread, post the single verdict as a comment on",
-    "that issue through the configured tracker adapter, and never open a new issue for it.",
-    "Intake adapter: where the operational file names a Slack source channel or thread,",
-    "read the GitHub issue and its comments; where it names a thread reply or a Slack",
-    "verdict post, post one issue comment; where it names an operations channel or",
-    "thread, keep detailed status in the run output. Ignore the Slack CLI fail-closed",
-    "check: this intake has no Slack CLI. The tracker identity that posts the verdict",
-    "is the trusted triage identity for marker checks.",
+    `Intake binding contract: ${reference}`,
     "",
-    "Apply the pack's hard safety rules: keep the source issue coordinates immutable",
-    "and fail closed when the configuration, tracker adapter, or verification skill is missing.",
+    "Intake binding:",
+    `- intake: ${binding.source}`,
+    `- source item: ${binding.sourceItem}`,
+    `- source thread: ${binding.sourceThread}`,
+    `- verdict location: ${binding.verdictLocation}`,
+    `- adapter: ${binding.adapter.name}`,
+    `- adapter read: ${binding.adapter.read}`,
+    `- adapter post: ${binding.adapter.post}`,
+    `- trusted verdict identity: ${binding.verdictIdentity}`,
+    `- operations location: ${binding.operationsLocation}`,
+    "",
+    "Freeze the binding's source coordinates before any work. Post exactly one verdict,",
+    "only at the verdict location, through the adapter. Never open a new top-level post",
+    "for the report. Keep the source coordinates immutable. Fail closed when the binding,",
+    "the adapter, the tracker adapter, or the verification skill is missing.",
   ].join("\n");
 }
 
-export function buildPiArgs(options: RunnerOptions, intake: IntakeConfig, model?: string): string[] {
+export function buildPiArgs(options: RunnerOptions, binding: IntakeBinding, model?: string): string[] {
   const args = ["-p", "--no-session"];
   if (model !== undefined) args.push("--model", model);
-  args.push(buildPrompt(options, intake));
+  args.push(buildPrompt(options, binding));
   return args;
 }
 
-export function parseArgs(argv: readonly string[]): RunnerOptions | { readonly help: true } | { readonly error: string } {
+export function parseArgs(argv: readonly string[]): RunnerOptions | { readonly help: true } | RunnerError {
   let mode: string | undefined;
   let configPath: string | undefined;
   let event = "{}";
@@ -303,7 +531,13 @@ export function run(options: RunnerOptions): number {
     return 2;
   }
 
-  const args = buildPiArgs(options, intake, resolveModel(options, config));
+  const binding = buildBinding(intake, options.event, options.mode);
+  if ("error" in binding) {
+    process.stderr.write(`benny: ${binding.error}\n`);
+    return 2;
+  }
+
+  const args = buildPiArgs(options, binding, resolveModel(options, config));
 
   if (options.dryRun) {
     process.stdout.write(`pi ${args.map((value) => JSON.stringify(value)).join(" ")}\n`);
