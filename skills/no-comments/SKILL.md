@@ -1,6 +1,6 @@
 ---
 name: no-comments
-description: "Spawn Comment Sicko, fix accepted findings, and offer encodings for claimed constraints."
+description: "Spawn Comment Sicko, fix accepted findings, and offer encodings for claimed constraints. Use before review or when comments should be stripped from a diff."
 ---
 
 # No comments
