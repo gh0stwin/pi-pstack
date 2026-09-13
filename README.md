@@ -97,7 +97,7 @@ npm install
 npm run check     # typechecks `extensions/`, `automations/`, and the poteto-mode scripts tree, then runs the tests
 ```
 
-`npm run typecheck` covers both tsconfigs, and `npm test` runs the `skills/poteto-mode/scripts/` tests plus the Benny tests (`automations/benny/`) through `node --test`.
+`npm run typecheck` covers both tsconfigs, and `npm test` runs the extension tests (`extensions/`), the `skills/poteto-mode/scripts/` tests, and the Benny tests (`automations/benny/`) through `node --test`.
 
 ## License
 

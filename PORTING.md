@@ -352,7 +352,7 @@ Ordered by area. Each entry is a change the captain can disagree with.
 1. **`package.json` replaces `.cursor-plugin/plugin.json`.** Name `pi-pstack`, version `0.15.2` (tracks upstream), `private: true`, `type: module`, `license: MIT`, keyword `pi-package`, and a `pi` manifest declaring `extensions/` and `skills/`. The upstream `displayName`, `category`, `tags`, `logo`, `homepage`, and `repository` fields have no pi manifest equivalent; the repository and homepage are in `README.md` instead. The `prompts` manifest entry was removed because the package ships no prompt templates: both upstream slash commands are now skills.
 2. **Install path changed.** Upstream: install the plugin from Cursor's marketplace. Here: `pi install git:github.com/gh0stwin/pi-pstack`. `pi install -l` is the project-scoped form Benny uses.
 3. **`dependencies` gained `commander@14.0.0`** for the ported `watch-pr` and `orch` CLIs. It is declared at the package root because pi runs `npm install` there and Node resolves upward from the importing file. `dependencies` also carries `@juicesharp/rpiv-ask-user-question@2.9.0`, bundled and loaded through the `pi` manifest, for the `ask_user_question` tool that replaces Cursor's `AskQuestion`. `peerDependencies` lists pi's bundled packages (`@earendil-works/pi-*`, `typebox`) with `"*"`, per the package docs.
-4. **Build, test, and lint setup added.** `npm run typecheck` typechecks `extensions/`, `automations/`, and the scripts tree; `npm test` runs all 73 tests through `node --test`; `npm run check` runs both. Upstream had no package-level check.
+4. **Build, test, and lint setup added.** `npm run typecheck` typechecks `extensions/`, `automations/`, and the scripts tree; `npm test` runs all 110 tests through `node --test`; `npm run check` runs both. Upstream had no package-level check.
 
 ### Skills
 
@@ -462,7 +462,7 @@ The 3 `automations/benny/skills/*/SKILL.md` files are deliberately outside the p
 ### Scripts
 
 ```bash
-npm run check        # typecheck (extensions + automations + scripts) and 73 tests
+npm run check        # typecheck (extensions + automations + scripts) and 110 tests
 ```
 
 ```text
@@ -470,7 +470,8 @@ watch-pr: 38 tests, 0 fail
 orch:     14 tests, 0 fail
 benny-run: 18 tests, 0 fail
 installation: 2 tests, 0 fail
-total:    73 tests, 0 fail
+subagent: 37 tests, 0 fail
+total:    110 tests, 0 fail
 ```
 
 All under Node 24 with `node --test`. `worktree-audit.sh` passes `bash -n` and was run against this repository (it produced a row with a `LAST_SESSION` date and the `hold-wip` bucket). `check-plan.mjs` behavior is unchanged.

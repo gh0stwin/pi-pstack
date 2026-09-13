@@ -26,7 +26,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p skills/poteto-mode/scripts/tsconfig.json",
-    "test": "node --test 'skills/poteto-mode/scripts/**/*.test.ts' 'automations/**/*.test.ts'",
+    "test": "node --test 'extensions/**/*.test.ts' 'skills/poteto-mode/scripts/**/*.test.ts' 'automations/**/*.test.ts'",
     "check": "npm run typecheck && npm test"
   },
   "dependencies": {
