@@ -11,7 +11,7 @@ Benny needs external configuration, an intake source, and two headless pi runs. 
 
 Benny takes reports from Slack, GitHub issues / the CLI, or any source that can build an intake binding (the generic webhook/CLI intake). Slack is one option, not a requirement: a user who does not use Slack sets `intake.source: github` or `intake.source: webhook` and never provides a Slack CLI or token.
 
-Every run receives one intake binding: the source item, the source thread, the single verdict location, and the adapter that reads and posts. The operational files are written in those terms, and [`../references/intake-binding.md`](../references/intake-binding.md) is the contract behind them.
+Every run receives one intake binding: the source item, the source thread, the single verdict location, and the adapter that reads and posts. The operational files are written in those terms, and [`../../references/intake-binding.md`](../../references/intake-binding.md) is the contract behind them.
 
 Do this before asking for Benny configuration.
 
