@@ -1,7 +1,8 @@
 # Triage run prompt
 
 > Reference for the headless run. The runner (`../runner/benny-run.ts`) builds
-> this prompt; the GitHub Actions workflow (`benny-triage.yml`) calls it.
+> this prompt from the configuration, the event, and the resolved intake
+> binding. The operational file it names is the run's actual instruction set.
 
 Read and follow `.pi/automations/benny/skills/triage-issue-reports/SKILL.md` for this run.
 
@@ -11,7 +12,24 @@ Configuration source. Use this repository-relative path when it is committed in 
 {{BENNY_CONFIG_PATH}}
 ```
 
-Event:
+The runner passes this binding, one line per field:
+
+```text
+Intake binding:
+- intake: <slack | github | webhook>
+- source item: <the report being triaged>
+- source thread: <the conversation around it>
+- verdict location: <the single place the one verdict goes>
+- adapter: <what reads and posts>
+- adapter read: <read command or instruction>
+- adapter post: <post command or instruction>
+- trusted verdict identity: <the author whose marker the reproduce run trusts>
+- operations location: <where detailed status goes, or the run output>
+```
+
+The binding contract and the per-intake adapter notes are in [`../references/intake-binding.md`](../references/intake-binding.md).
+
+Event, Slack intake:
 
 ```json
 {
@@ -20,8 +38,6 @@ Event:
 	"thread_ts": "{{SLACK_THREAD_TS_OR_EMPTY}}"
 }
 ```
-
-The event describes a new top-level report in the configured source Slack channel. `ts` is the report; `thread_ts` is present only when the report is already a reply.
 
 Event, GitHub intake (`intake.source: github`):
 
@@ -32,13 +48,27 @@ Event, GitHub intake (`intake.source: github`):
 }
 ```
 
-The GitHub intake has no Slack CLI. Treat the issue named by the event as the source thread and post the single verdict as one comment on that issue through the configured tracker adapter. Do not call Slack or any Slack API.
+Event, webhook/CLI intake (`intake.source: webhook`):
 
-Treat the source coordinates as immutable. If they are missing or do not match configuration, stop without posting or writing to the issue tracker.
+```json
+{
+	"source_item": "SUP-1234",
+	"source_thread": "SUP-1234",
+	"verdict_location": "SUP-1234#reply",
+	"adapter": {
+		"read": "support-cli thread SUP-1234",
+		"post": "support-cli reply SUP-1234"
+	}
+}
+```
 
-The operational file owns classification, attachment review, cause tracing, routing, dedupe, tracker writes, and the final verdict. Post no progress messages. Never post a root message in the source channel.
+The runner validates the webhook payload before it starts `pi` and fails closed on a missing field, a malformed value, or a verdict location that does not name the same item as `source_item`.
 
-The coordinator is the only poster. Any delegated subagent must run read-only (`readonly: true`), return findings only, and receive an explicit ban on every Slack write action. The GitHub intake has no Slack poster at all.
+Treat the binding's source coordinates as immutable. If they are missing or do not match the event, stop without posting or writing to the issue tracker.
+
+The operational file owns classification, attachment review, cause tracing, routing, dedupe, tracker writes, and the final verdict. Post no progress messages, and never open a new top-level post for the report.
+
+The coordinator is the only poster. Any delegated subagent must run read-only (`readonly: true`), return findings only, and receive an explicit ban on every adapter write; the adapter contract names the concrete write actions for each intake.
 
 End the single verdict with exactly one configured marker:
 

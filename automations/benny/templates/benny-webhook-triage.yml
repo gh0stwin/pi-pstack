@@ -1,0 +1,69 @@
+# Benny triage for the generic webhook/CLI intake. Copy to
+# .github/workflows/benny-webhook-triage.yml in the target repository and
+# adjust the pi install step.
+#
+# Use this pair when the configuration sets `intake.source: webhook`. The
+# source hands the runner a complete binding: source item, source thread,
+# verdict location, and the adapter that reads and posts. Post it as the
+# repository_dispatch client payload:
+#
+#   POST /repos/{owner}/{repo}/dispatches
+#   { "event_type": "benny-report",
+#     "client_payload": {
+#       "source_item": "SUP-1234",
+#       "source_thread": "SUP-1234",
+#       "verdict_location": "SUP-1234#reply",
+#       "adapter": { "read": "support-cli thread SUP-1234",
+#                    "post": "support-cli reply SUP-1234" } } }
+#
+# The adapter owns its credentials; add them to this step's env when the
+# commands need them. `workflow_dispatch` is the manual path for a test binding.
+name: benny-webhook-triage
+
+on:
+  repository_dispatch:
+    types: [benny-report]
+  workflow_dispatch:
+    inputs:
+      binding:
+        description: "Binding JSON: source_item, source_thread, verdict_location, adapter.read, adapter.post"
+        required: true
+
+concurrency:
+  group: benny-triage-${{ github.event.client_payload.source_item || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install pi
+        run: npm install -g --ignore-scripts @earendil-works/pi-coding-agent
+
+      - name: Install project packages
+        run: pi install -l git:github.com/gh0stwin/pi-pstack
+
+      - name: Triage the report
+        env:
+          PI_PROVIDER_KEY: ${{ secrets.PI_PROVIDER_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BENNY_DISPATCH: ${{ toJSON(github.event.client_payload) }}
+          BENNY_BINDING: ${{ inputs.binding }}
+        run: |
+          set -euo pipefail
+          event="$BENNY_DISPATCH"
+          case "$event" in '' | '{}' | 'null') event="$BENNY_BINDING" ;; esac
+          node .pi/automations/benny/runner/benny-run.ts \
+            --mode triage \
+            --config .pi/benny/configuration.yaml \
+            --event "$event"

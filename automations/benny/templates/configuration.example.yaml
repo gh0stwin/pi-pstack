@@ -7,12 +7,14 @@ runs:
 
 # How reports reach Benny. `slack` needs the Slack section below; `github`
 # reads issues from the configured repository through the tracker adapter and
-# needs no Slack setup. A user who does not use Slack deletes the whole slack
-# section and sets source to "github".
+# needs no Slack setup. `webhook` takes the whole binding from the event
+# (`source_item`, `source_thread`, `verdict_location`, `adapter.read`,
+# `adapter.post`) and needs no section either. A user who does not use Slack
+# deletes the whole slack section and sets source to "github" or "webhook".
 intake:
-  source: "slack" # slack | github
+  source: "slack" # slack | github | webhook
 
-# Slack intake only. Delete this whole section for intake.source: github.
+# Slack intake only. Delete this whole section for intake.source: github or webhook.
 # Benny has no built-in Slack integration. Point `cli` at the wrapper the
 # repository provides; it must implement the contract in
 # skills/setup-benny/SKILL.md.
@@ -35,6 +37,14 @@ repository:
 # The GitHub intake reads the issue named by the run event
 # (`{"issue":123,"url":"https://github.com/owner/repo/issues/123"}`) and
 # posts the verdict as an issue comment through the tracker adapter below.
+# `tracker.adapter` is required for this intake: it reads the issue and posts
+# the verdict comment.
+#
+# The webhook intake takes its binding from the event instead of the config:
+# (`{"source_item":"SUP-1234","verdict_location":"SUP-1234#reply",
+#    "adapter":{"read":"support-cli thread SUP-1234",
+#               "post":"support-cli reply SUP-1234"}}`).
+# `verdict_location` must name the same item as `source_item`.
 
 tracker:
   type: "github-issues"
@@ -47,7 +57,7 @@ tracker:
     intake: "triage"
     needs_repro: "needs-repro"
   status: ""
-  source_link_title: "Slack report"
+  source_link_title: "Source report"
   require_compensation_action: true
 
 routing:
