@@ -352,7 +352,7 @@ Ordered by area. Each entry is a change the captain can disagree with.
 1. **`package.json` replaces `.cursor-plugin/plugin.json`.** Name `pi-pstack`, version `0.15.2` (tracks upstream), `private: true`, `type: module`, `license: MIT`, keyword `pi-package`, and a `pi` manifest declaring `extensions/` and `skills/`. The upstream `displayName`, `category`, `tags`, `logo`, `homepage`, and `repository` fields have no pi manifest equivalent; the repository and homepage are in `README.md` instead. The `prompts` manifest entry was removed because the package ships no prompt templates: both upstream slash commands are now skills.
 2. **Install path changed.** Upstream: install the plugin from Cursor's marketplace. Here: `pi install git:github.com/gh0stwin/pi-pstack`. `pi install -l` is the project-scoped form Benny uses.
 3. **`dependencies` gained `commander@14.0.0`** for the ported `watch-pr` and `orch` CLIs. It is declared at the package root because pi runs `npm install` there and Node resolves upward from the importing file. `dependencies` also carries `@juicesharp/rpiv-ask-user-question@2.9.0`, bundled and loaded through the `pi` manifest, for the `ask_user_question` tool that replaces Cursor's `AskQuestion`. `peerDependencies` lists pi's bundled packages (`@earendil-works/pi-*`, `typebox`) with `"*"`, per the package docs.
-4. **Build, test, and lint setup added.** `npm run typecheck` typechecks `extensions/`, `automations/`, and the scripts tree; `npm test` runs all 131 tests through `node --test`; `npm run check` runs both. Upstream had no package-level check.
+4. **Build, test, and lint setup added.** `npm run typecheck` typechecks `extensions/`, `automations/`, and the scripts tree; `npm test` runs all 150 tests through `node --test`; `npm run check` runs both. Upstream had no package-level check.
 
 ### Skills
 
@@ -380,7 +380,7 @@ Ordered by area. Each entry is a change the captain can disagree with.
 
 ### Scripts
 
-23. **`watch-pr` ported to Node.** `#!/usr/bin/env node`; `bun:test` replaced by `node:test` plus the new `expect` shim; all 38 tests kept and passing.
+23. **`watch-pr` ported to Node.** `#!/usr/bin/env node`; `bun:test` replaced by `node:test` plus the new `expect` shim; all 38 upstream tests kept and passing, with the suite at 40 today.
 24. **`orch` ported to Node.** `Bun.spawnSync` → `node:child_process.spawnSync`, `Bun.spawn` → `spawn` + `once(child, "exit")`, `import.meta.dir` → `import.meta.dirname`, and one TypeScript parameter property in `store.ts` rewritten because Node's strip-only loader rejects it. All 14 tests kept and passing.
 25. **`bootstrap.ts` removed.** Upstream installed its runtime dependency on first use. pi runs `npm install` at the package root for npm and git installs, and a clone user runs it there, so the fallback and its install stamp are gone. `bun.lock` is gone too.
 26. **`worktree-audit.sh` ported to pi sessions.** It resolves the session directory from `PI_CODING_AGENT_SESSION_DIR` / `PI_CODING_AGENT_DIR`, searches both the repository-level session directory and each worktree's own directory (pi keys sessions by the session's cwd), handles GNU and BSD `stat`/`date`, and renames the `LAST_CHAT` column to `LAST_SESSION` and the `verify-recent-chat` bucket to `verify-recent-session`.
@@ -469,16 +469,17 @@ After the intake-binding change, `loadSkillsFromDir` against `automations/benny/
 ### Scripts
 
 ```bash
-npm run check        # typecheck (extensions + automations + scripts) and 131 tests
+npm run check        # typecheck (extensions + automations + scripts) and 150 tests
 ```
 
 ```text
-watch-pr: 39 tests, 0 fail
+watch-pr: 40 tests, 0 fail
 orch:     14 tests, 0 fail
 benny-run: 37 tests, 0 fail
-installation: 4 tests, 0 fail
-subagent: 37 tests, 0 fail
-total:    131 tests, 0 fail
+installation: 9 tests, 0 fail
+subagent: 48 tests, 0 fail
+worktree-audit: 2 tests, 0 fail
+total:    150 tests, 0 fail
 ```
 
 All under Node 24 with `node --test`. `worktree-audit.sh` passes `bash -n` and was run against this repository (it produced a row with a `LAST_SESSION` date and the `hold-wip` bucket). `check-plan.mjs` behavior is unchanged.
