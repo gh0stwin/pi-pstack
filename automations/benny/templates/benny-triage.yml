@@ -10,6 +10,9 @@
 #     "client_payload": { "channel": "C0123", "ts": "1700000000.000100" } }
 #
 # `workflow_dispatch` is the manual path for a test report.
+#
+# `timeout-minutes` is adjustable to the repository's triage budget; the shipped
+# value is a default, not a limit (setup-benny step 10).
 name: benny-triage
 
 on:

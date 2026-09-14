@@ -12,6 +12,9 @@
 # silently stops the labeled-event trigger. A new or reopened issue is triaged
 # as it arrives; a labeled issue is triaged only when the event's newly added
 # label is the intake label.
+#
+# `timeout-minutes` is adjustable to the repository's triage budget; the shipped
+# value is a default, not a limit (setup-benny step 10).
 name: benny-github-triage
 
 on:

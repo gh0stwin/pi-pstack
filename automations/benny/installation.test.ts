@@ -393,6 +393,42 @@ function exampleGitlabTokenEnv(): string {
   return String(gitlab.token_env);
 }
 
+/** `verification.artifact_directory` from the example configuration. */
+function exampleArtifactDirectory(): string {
+  const config = parseYaml(
+    readFileSync(join(packageRoot, "automations", "benny", "templates", "configuration.example.yaml"), "utf8"),
+  );
+  return String(asRecord(config, "verification").artifact_directory);
+}
+
+it("resolves the example artifact directory per run so concurrent benny runs cannot share proof artifacts", () => {
+  const configured = exampleArtifactDirectory();
+  const base = mkdtempSync(join(tmpdir(), "benny-artifacts-"));
+  try {
+    // Two overlapping runs each resolve the configured directory for themselves
+    // and write the same proof filenames the operational file asks for. A fixed
+    // configured path makes the second run overwrite the first run's proof, and
+    // a finishing run's cleanup then removes the other run's evidence.
+    const runDir = (runId: string) => join(base, configured.replaceAll("$RUN_ID", runId).replace(/^\/+/, ""));
+    const first = runDir("1001");
+    const second = runDir("1002");
+    expect(first === second).toBe(false);
+
+    for (const [dir, proof] of [[first, "run 1001"], [second, "run 1002"]] as const) {
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "screenshot.png"), proof);
+    }
+    expect(readFileSync(join(first, "screenshot.png"), "utf8")).toBe("run 1001");
+    expect(readFileSync(join(second, "screenshot.png"), "utf8")).toBe("run 1002");
+
+    // Cleanup belongs to the run that finished, never to its neighbor.
+    rmSync(second, { recursive: true, force: true });
+    expect(existsSync(join(first, "screenshot.png"))).toBe(true);
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
 it("ships GitHub-intake workflows that drive the runner with the no-Slack event, guard, and env", () => {
   const configured = exampleTrackerLabels();
   const cases = [

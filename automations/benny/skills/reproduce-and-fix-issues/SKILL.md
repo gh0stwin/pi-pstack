@@ -196,7 +196,7 @@ For a successful repro:
 - Record the full path through the symptom.
 - Capture a screenshot of the broken final state.
 - Save a short note with the exact steps and observed state.
-- Keep artifacts in the configured temporary artifact directory.
+- Keep artifacts in the configured temporary artifact directory, with `$RUN_ID` replaced by this run's identifier (the value of `GITHUB_RUN_ID` in a workflow job; a unique id for a local run) so concurrent benny runs never share a directory.
 
 Have a read-only media reviewer answer one question: does the evidence visibly show the discriminating broken state?
 

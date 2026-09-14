@@ -84,7 +84,11 @@ verification:
   skill_name: "verify-target-app"
   feature_map_path: ".pi/benny/feature-map.md"
   environment: "safe-test-environment-placeholder"
-  artifact_directory: "/tmp/benny-artifacts"
+  # `$RUN_ID` is this run's identifier: the value of `GITHUB_RUN_ID` in a
+  # workflow job, or a unique id for a local run. Keep it in the path so two
+  # concurrent benny runs never share a directory and overwrite or clean each
+  # other's proof artifacts.
+  artifact_directory: "/tmp/benny-artifacts-$RUN_ID"
   artifact_retention_hours: 24
 
 verdict_markers:
