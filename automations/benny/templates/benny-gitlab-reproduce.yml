@@ -24,6 +24,10 @@
 # it MUST be changed to the configured name when it is not "GITLAB_TOKEN"
 # (setup-benny step 10). A mismatch fails only when the adapter authenticates.
 #
+# The sweep cadence (`cron`) and `timeout-minutes` are adjustable to the
+# repository's traffic and repro budget; the shipped values are defaults, not
+# limits (setup-benny step 10).
+#
 # Keep `draft_only: true` in the configuration. This workflow never merges.
 name: benny-gitlab-reproduce
 

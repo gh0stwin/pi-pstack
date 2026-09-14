@@ -18,6 +18,9 @@
 #
 # The adapter owns its credentials; add them to this step's env when the
 # commands need them. `workflow_dispatch` is the manual path for a test binding.
+#
+# `timeout-minutes` is adjustable to the repository's triage budget; the shipped
+# value is a default, not a limit (setup-benny step 10).
 name: benny-webhook-triage
 
 on:

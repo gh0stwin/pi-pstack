@@ -30,6 +30,9 @@
 # in the run step below is the only place this workflow declares that name, so
 # it MUST be changed to the configured name when it is not "GITLAB_TOKEN"
 # (setup-benny step 10). A mismatch fails only when the adapter authenticates.
+#
+# `timeout-minutes` is adjustable to the repository's triage budget; the shipped
+# value is a default, not a limit (setup-benny step 10).
 name: benny-gitlab-triage
 
 on:

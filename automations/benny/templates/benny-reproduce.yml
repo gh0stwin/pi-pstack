@@ -7,6 +7,10 @@
 # carries a trusted marker and has no repro reply yet, and the dispatch path
 # runs one report immediately.
 #
+# The sweep cadence (`cron`) and `timeout-minutes` are adjustable to the
+# repository's traffic and repro budget; the shipped values are defaults, not
+# limits (setup-benny step 10).
+#
 # Keep `draft_only: true` in the configuration. This workflow never merges.
 name: benny-reproduce
 

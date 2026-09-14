@@ -13,6 +13,10 @@
 # the oldest triaged issue with no repro reply yet; a labeled issue or a manual
 # dispatch runs one issue immediately.
 #
+# The sweep cadence (`cron`) and `timeout-minutes` are adjustable to the
+# repository's traffic and repro budget; the shipped values are defaults, not
+# limits (setup-benny step 10).
+#
 # Keep `draft_only: true` in the configuration. This workflow never merges.
 name: benny-github-reproduce
 
