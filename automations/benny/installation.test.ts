@@ -371,6 +371,28 @@ function exampleTrackerLabels(): Record<string, string> {
   return result;
 }
 
+/**
+ * `gitlab.token_env` from the example configuration. The GitLab section is
+ * commented out because Slack is the example's live default, so read the
+ * documented block the GitLab template comments point at.
+ */
+function exampleGitlabTokenEnv(): string {
+  const lines = readFileSync(
+    join(packageRoot, "automations", "benny", "templates", "configuration.example.yaml"),
+    "utf8",
+  ).split(/\r?\n/);
+  const start = lines.findIndex((line) => /^#\s*gitlab:\s*$/.test(line));
+  if (start < 0) throw new Error("the example configuration documents no gitlab section");
+  const block: string[] = [];
+  for (let index = start; index < lines.length; index++) {
+    const match = /^#\s?(.*)$/.exec(lines[index]);
+    if (match === null) break;
+    block.push(match[1]);
+  }
+  const gitlab = asRecord(parseYaml(block.join("\n")), "gitlab");
+  return String(gitlab.token_env);
+}
+
 it("ships GitHub-intake workflows that drive the runner with the no-Slack event, guard, and env", () => {
   const configured = exampleTrackerLabels();
   const cases = [
@@ -423,11 +445,13 @@ it("ships GitHub-intake workflows that drive the runner with the no-Slack event,
 });
 
 it("ships GitLab-intake workflows that drive the runner with the GitLab event, newly-added-label guard, and env", () => {
+  const configured = exampleTrackerLabels();
+  const tokenEnv = exampleGitlabTokenEnv();
   const cases = [
     {
       file: "benny-gitlab-triage.yml",
       mode: "triage",
-      intakeLabel: "triage",
+      labelKey: "intake",
       manualBypass: "github.event_name == 'workflow_dispatch'",
       allowedActions: ["opened", "reopened"],
       sweeps: false,
@@ -435,14 +459,18 @@ it("ships GitLab-intake workflows that drive the runner with the GitLab event, n
     {
       file: "benny-gitlab-reproduce.yml",
       mode: "reproduce",
-      intakeLabel: "needs-repro",
+      labelKey: "needs_repro",
       manualBypass: "github.event_name != 'repository_dispatch'",
       allowedActions: [],
       sweeps: true,
     },
   ];
 
-  for (const { file, mode, intakeLabel, manualBypass, allowedActions, sweeps } of cases) {
+  for (const { file, mode, labelKey, manualBypass, allowedActions, sweeps } of cases) {
+    // The guard literal must be the configured default label: a drift between
+    // tracker.labels.* and the copied workflow silently stops the trigger.
+    const intakeLabel = configured[labelKey];
+    expect(typeof intakeLabel).toBe("string");
     const workflow = parseYaml(readFileSync(join(packageRoot, "automations", "benny", "templates", file), "utf8"));
 
     const triggers = asRecord(workflow, "on");
@@ -482,7 +510,9 @@ it("ships GitLab-intake workflows that drive the runner with the GitLab event, n
 
     const env = runRecord.env as Record<string, YamlValue>;
     expect(env.PI_PROVIDER_KEY).toBeDefined();
-    expect(env.GITLAB_TOKEN).toBeDefined();
+    // The env key is a second declaration of gitlab.token_env: the runner
+    // tells the adapter to read that name, so a drift fails at verdict time.
+    expect(env[tokenEnv]).toBe(`\${{ secrets.${tokenEnv} }}`);
     expect(env.BENNY_SLACK_BOT_TOKEN).toBeUndefined();
 
     const tokens = runnerInvocation(String(runRecord.run));

@@ -1,6 +1,6 @@
 # Benny reproduce-and-fix for the GitLab intake. Copy to
 # .github/workflows/benny-gitlab-reproduce.yml in the target repository and
-# adjust the label and the pi install step.
+# adjust the guard label and the pi install step.
 #
 # Use this pair instead of benny-triage.yml / benny-reproduce.yml when the
 # configuration sets `intake.source: gitlab`. The reports are GitLab issues and
@@ -8,11 +8,21 @@
 # No Slack CLI or token is needed; the GitLab webhook relay is the same one
 # benny-gitlab-triage.yml documents.
 #
-# The reproduce label defaults to `tracker.labels.needs_repro` ("needs-repro").
-# The schedule sweeps for the oldest triaged issue with no repro reply yet; a
-# labeled issue or a manual dispatch runs one issue immediately, and only when
-# the event's newly added label is the reproduce label, so a later label change
-# cannot re-trigger and duplicate the verdict.
+# The reproduce label is `tracker.labels.needs_repro` in the configuration.
+# The job-level `if:` guard below is the only place this workflow declares it,
+# and a guard cannot read the configuration, so the literal MUST be changed to
+# the configured label when it is not "needs-repro" (setup-benny step 10). A
+# mismatch silently stops the labeled-event trigger. The schedule sweeps for
+# the oldest triaged issue with no repro reply yet; a labeled issue or a manual
+# dispatch runs one issue immediately, and only when the event's newly added
+# label is the reproduce label, so a later label change cannot re-trigger and
+# duplicate the verdict.
+#
+# The tracker adapter reads the GitLab token from the environment variable
+# named by `gitlab.token_env` in the configuration. The `GITLAB_TOKEN` env key
+# in the run step below is the only place this workflow declares that name, so
+# it MUST be changed to the configured name when it is not "GITLAB_TOKEN"
+# (setup-benny step 10). A mismatch fails only when the adapter authenticates.
 #
 # Keep `draft_only: true` in the configuration. This workflow never merges.
 name: benny-gitlab-reproduce
@@ -37,6 +47,7 @@ concurrency:
 
 jobs:
   reproduce:
+    # Must equal `tracker.labels.needs_repro` in .pi/benny/configuration.yaml.
     if: ${{ github.event_name != 'repository_dispatch' || github.event.client_payload.label.name == 'needs-repro' }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
@@ -61,6 +72,7 @@ jobs:
       - name: Reproduce and fix
         env:
           PI_PROVIDER_KEY: ${{ secrets.PI_PROVIDER_KEY }}
+          # Must equal `gitlab.token_env` in .pi/benny/configuration.yaml.
           GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BENNY_INPUT_IID: ${{ inputs.iid }}
