@@ -39,6 +39,13 @@ export interface FakePiEntry {
   readonly agentDir: string | null;
 }
 
+export interface ToolCallLike {
+  readonly tool: string;
+  readonly args: Record<string, unknown>;
+  readonly executed: boolean;
+  readonly isError: boolean;
+}
+
 export interface SingleResultLike {
   readonly agent: string;
   readonly agentSource: string;
@@ -47,6 +54,7 @@ export interface SingleResultLike {
   readonly exitCode: number;
   readonly output: string;
   readonly stderr: string;
+  readonly toolCalls: readonly ToolCallLike[];
   readonly stopReason?: string;
   readonly errorMessage?: string;
 }
