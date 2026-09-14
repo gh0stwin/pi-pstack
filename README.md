@@ -76,7 +76,7 @@ At the end, setup offers once to generate a project-local verification skill wit
 /skill:poteto-mode add a --json flag to this command. text output stays byte-identical. verify both.
 ```
 
-`/skill:poteto-mode` is sticky for the conversation. Say "opt out" to leave it. To start a fresh match mid-conversation, say "new task". Other skills are available directly:
+`/skill:poteto-mode` is sticky for the conversation. Its instructions stay in context and keep guiding the work, but a long conversation's automatic compaction can summarize them away. Re-invoke `/skill:poteto-mode` after a big compaction to restore the full rigor. Say "opt out" to leave it. To start a fresh match mid-conversation, say "new task". Other skills are available directly:
 
 ```text
 /skill:how do we dedupe notifications? is there an n+1 when we look up subscribers?
