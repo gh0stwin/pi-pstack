@@ -234,6 +234,17 @@ it("runs inherit-parent and auto roles on the parent model and thinking level", 
   expect(firstStart(harness).model).toBe("parent/model");
 });
 
+it("runs a built-in role on the parent model when no config file exists", async () => {
+  const harness = new ExtensionHarness();
+  const result = await harness.runTool(
+    "subagent",
+    { agent: "worker", task: "one", role: "bug-fix" },
+    { trusted: true },
+  );
+  expect(firstStart(harness).model).toBe("parent/model");
+  expect(result.isError).toBe(false);
+});
+
 it("omits --model when an inherited role has no parent model", async () => {
   const harness = new ExtensionHarness();
   harness.env.writeProjectRoles({ fast: "inherit-parent" });
@@ -441,6 +452,14 @@ it("pstack_roles reports the effective map and the file that supplied it", async
   expect(details.roles["bug-fix"]).toBe("project/fix");
   expect(details.sources).toEqual([join(harness.env.projectDir, ".pi", "pstack-models.json")]);
   expect(details.defaults["bug-fix"]).toBe(DEFAULT_ROLES["bug-fix"]);
+});
+
+it("does not tell a config that explicitly chose to inherit that setup is pending", async () => {
+  const harness = new ExtensionHarness();
+  harness.env.writeProjectRoles({ "bug-fix": "inherit-parent", "interrogate reviewers": ["inherit-parent"] });
+  const result = await harness.runTool("pstack_roles", {}, { trusted: true });
+  expect(textOf(result)).toContain("bug-fix: inherit-parent");
+  expect(textOf(result)).not.toContain("/skill:setup-pstack");
 });
 
 it("the /pstack-models command notifies the effective role map", async () => {

@@ -28,14 +28,24 @@ const SKILL_ROLE_CALLS = [
 /** Panel roles whose config value is a list, one subagent per entry. */
 const PANEL_ROLES = ["arena runners", "arena cross-judge pool", "architect runners", "interrogate reviewers"];
 
-it("ships a resolvable default model for every role the skills pass", () => {
+it("ships a resolvable default for every role the skills pass, all on the parent session model", () => {
   for (const role of [...SKILL_ROLE_CALLS, ...PANEL_ROLES]) {
-    const model = resolveRoleModel(DEFAULT_ROLES, role);
-    expect(typeof model).toBe("string");
-    expect((model ?? "").length > 0).toBe(true);
+    const models = resolveRoleModels(DEFAULT_ROLES, role);
+    expect(models.length > 0).toBe(true);
+    for (const model of models) expect(INHERIT_VALUES.has(model)).toBe(true);
   }
   expect(Object.keys(DEFAULT_ROLES)).toContain("feature, refactoring");
-  expect(resolveRoleModels(DEFAULT_ROLES, "interrogate reviewers")).toHaveLength(4);
+  // Panel roles keep the list shape; an unconfigured panel is one inherited runner.
+  expect(resolveRoleModels(DEFAULT_ROLES, "interrogate reviewers")).toEqual(["inherit-parent"]);
+});
+
+it("names no provider in any built-in default", () => {
+  const values = Object.values(DEFAULT_ROLES).flatMap((value) => (typeof value === "string" ? [value] : [...value]));
+  expect(values.length > 0).toBe(true);
+  for (const value of values) {
+    expect(INHERIT_VALUES.has(value)).toBe(true);
+    expect(value.includes("/")).toBe(false);
+  }
 });
 
 it("resolves direct labels, comma-grouped members, and case-insensitive spellings", () => {
@@ -58,7 +68,7 @@ it("resolves a panel role to its full list and to its first entry for a single m
 it("keeps inherit-parent and auto as parent-model aliases, not model ids", () => {
   expect(INHERIT_VALUES.has("inherit-parent")).toBe(true);
   expect(INHERIT_VALUES.has("auto")).toBe(true);
-  expect(INHERIT_VALUES.has("deepinfra/zai-org/GLM-5.3-Flash")).toBe(false);
+  expect(INHERIT_VALUES.has("provider/model")).toBe(false);
   expect(resolveRoleModel({ fast: "inherit-parent", smart: "auto" }, "fast")).toBe("inherit-parent");
   expect(resolveRoleModel({ fast: "inherit-parent", smart: "auto" }, "smart")).toBe("auto");
 });

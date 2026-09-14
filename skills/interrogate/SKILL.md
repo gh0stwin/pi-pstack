@@ -32,7 +32,7 @@ Write one clear paragraph. If you're unsure about the intent, ask the user befor
 
 ## Step 3, Spawn Reviewers
 
-Launch all reviewers in a single message as parallel `subagent` calls. Read the `interrogate reviewers` list from `~/.pi/agent/pstack-models.json` (or `.pi/pstack-models.json`) when present; `/skill:setup-pstack` writes it. One reviewer runs per entry; label them Reviewer A, B, C, D, and so on up to the configured entry count. Otherwise call the `pstack_roles` tool for the effective map (the `/pstack-models` command shows the same map to the user) and use the built-in `interrogate reviewers` entries.
+Launch all reviewers in a single message as parallel `subagent` calls. Read the `interrogate reviewers` list from `~/.pi/agent/pstack-models.json` (or `.pi/pstack-models.json`) when present; `/skill:setup-pstack` writes it. One reviewer runs per entry; label them Reviewer A, B, C, D, and so on up to the configured entry count. Otherwise call the `pstack_roles` tool for the effective map (the `/pstack-models` command shows the same map to the user) and use the built-in `interrogate reviewers` entries. A panel needs distinct models to supply independent perspectives: the built-in default is a single inherited reviewer, so set `interrogate reviewers` to a list of distinct models with `/skill:setup-pstack`.
 
 For each reviewer:
 - `agent`: `worker`

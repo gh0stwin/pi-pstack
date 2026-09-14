@@ -29,7 +29,7 @@ Skip Phase A only when the work is genuinely greenfield with no surrounding syst
 
 Run the **arena** skill with the design-sketch task and the Phase A grounding artifacts. Pass `references/runner-prompt.md` as each runner's prompt. Each candidate produces a design package shaped per `references/rationale-template.md`.
 
-Use the `architect runners` list from `~/.pi/agent/pstack-models.json` (or `.pi/pstack-models.json`) when present; `/skill:setup-pstack` writes it. Otherwise use the built-in defaults listed by `/pstack-models`. One runner runs per entry.
+Use the `architect runners` list from `~/.pi/agent/pstack-models.json` (or `.pi/pstack-models.json`) when present; `/skill:setup-pstack` writes it. Otherwise use the built-in defaults listed by `/pstack-models`. One runner runs per entry. A panel needs distinct models to supply independent perspectives: the built-in default is a single inherited runner, so set `architect runners` to a list of distinct models with `/skill:setup-pstack`.
 
 Design it twice. Require at least two structurally distinct candidates before synthesis, even when the first looks sufficient. This is the **exhaust-the-design-space** principle skill made concrete. Whole-shape alternatives, not point fixes inside one shape.
 
