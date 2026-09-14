@@ -21,9 +21,9 @@ Search lets a user find notes by title or body text, inspect a matching note, an
 
 Preconditions:
 
-- Notes is healthy at `http://127.0.0.1:4173`.
+- Notes is healthy at the run's recorded `NOTES_URL`.
 - The disposable data directory contains `Quarterly plan` with body text `Draft budget`.
-- `verify-notes doctor` reports the expected URL and data directory.
+- `verify-notes doctor` reports the run's recorded `NOTES_URL` and data directory.
 
 - **Toolbar entry.** Choose the `Search` button. Run `verify-notes browser click --role button --name "Search"`. A dialog named `Search notes` appears with focus in its searchbox.
 - **Keyboard entry.** Close the dialog, focus the page, and press `/`. Run `verify-notes browser press --key "/"`. The same dialog appears and the page does not insert a slash.

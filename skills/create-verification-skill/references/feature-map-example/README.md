@@ -4,11 +4,11 @@ This directory is the maintained source for verifying the user-facing behavior o
 
 ## Baseline preconditions
 
-- Launch Notes at `http://127.0.0.1:4173` with a disposable data directory.
-- Set `NOTES_DATA_DIR=/tmp/notes-verify-$RUN_ID` so concurrent runs do not share state.
+- Launch Notes with a disposable data directory, on a port chosen for this run. Never assume a port: pick a free one at launch time, or take the one the repo documents in the environment, so two verification runs can run side by side.
+- Record the base URL the launch produced as `NOTES_URL` for the rest of the run, the same way the disposable data directory is recorded as `NOTES_DATA_DIR=/tmp/notes-verify-$RUN_ID`. Every precondition, recipe, and doctor check below refers to that recorded `NOTES_URL`; nothing in this map hardcodes a port.
 - Seed notes titled `Quarterly plan` and `Grocery list`.
 - Put `verify-notes` and the `notes` CLI on `PATH`.
-- Run `verify-notes doctor` and require the expected URL, data directory, and build revision.
+- Run `verify-notes doctor` and require the URL it reports to be this run's recorded `NOTES_URL`, plus the expected data directory and build revision.
 - Never drive an instance that was not started by this verification run.
 
 ## Driving conventions
@@ -16,6 +16,7 @@ This directory is the maintained source for verifying the user-facing behavior o
 - Start every recipe from the baseline state unless its preconditions say otherwise.
 - Prefer ARIA roles and accessible names over CSS selectors or DOM position.
 - Treat every command as literal. Keep quoted names and flags unchanged.
+- Drive the instance at the run's recorded `NOTES_URL`, which the harness reads from the run state; never pass or assume a port.
 - Run browser actions through `verify-notes browser`.
 - Run terminal actions through `verify-notes cli -- <command>`.
 - Restore seeded data after a mutation. Do not remove proof artifacts during cleanup.

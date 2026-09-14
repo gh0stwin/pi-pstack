@@ -19,9 +19,9 @@ Create note lets a user save a titled note from the browser or CLI, cancel an un
 
 Preconditions:
 
-- Notes is healthy at `http://127.0.0.1:4173`.
+- Notes is healthy at the run's recorded `NOTES_URL`.
 - No note is titled `Release checklist`.
-- `verify-notes doctor` reports the expected URL and disposable data directory.
+- `verify-notes doctor` reports the run's recorded `NOTES_URL` and disposable data directory.
 
 - **Open editor.** Choose `New note`. Run `verify-notes browser click --role button --name "New note"`. A form named `Note editor` appears with focus in the `Title` textbox.
 - **Enter content.** Type the title and body. Run `verify-notes browser fill --role textbox --name "Title" --value "Release checklist"` and `verify-notes browser fill --role textbox --name "Body" --value "Tag and publish"`. The `Save note` button becomes enabled.
