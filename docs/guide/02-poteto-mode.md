@@ -53,6 +53,8 @@ keep going until done
 
 Short works because the mode is sticky and the playbook holds the structure. Your words carry the intent, and the skill carries the rigor.
 
+Stickiness is scoped to the conversation. The skill's instructions stay in context and keep guiding the work until you opt out. A long conversation's automatic compaction can summarize them away, which thins the mode. Re-invoke `/skill:poteto-mode` after a big compaction to restore the full rigor.
+
 ## Switch tasks with "new task"
 
 A long chat accumulates context from the last task. When you change subjects, say so:

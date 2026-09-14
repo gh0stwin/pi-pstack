@@ -70,6 +70,6 @@ Pick something real but small, and describe it the way you'd describe it to a co
 
 Watch the plan. Its first items are the matched playbook's steps copied in, the Feature playbook for this prompt. If `/skill:poteto-mode` skips a step, the step stays visible with `skip: <reason>`, so you can see what it chose not to do.
 
-From here you can type normal follow-ups. `/skill:poteto-mode` is sticky. It stays on for the conversation until you opt out by saying so.
+From here you can type normal follow-ups. `/skill:poteto-mode` is sticky. It stays on for the conversation until you opt out by saying so. The mode holds because the skill's instructions stay in context. A long conversation's automatic compaction can summarize them away, which thins the mode. Re-invoke `/skill:poteto-mode` after a big compaction to restore the full rigor.
 
 Next: [Route work through `/skill:poteto-mode`](./02-poteto-mode.md).
