@@ -17,7 +17,13 @@ const SUB_BLOCKS = [
 	"Merge.",
 ];
 const PROGRAM_H3 = ["Arm the program", "Spawn owners", "PR mechanics", "Verdict and merge", "Boot recipe"];
-const PROGRAM_MARKERS = ["objective of record", "git show origin/main:", /30[- ]minute/, "status message"];
+const PROGRAM_MARKERS = [
+	"objective of record",
+	/git show origin\/(?!<trunk>)[^\s:]+:/,
+	"never assume",
+	/30[- ]minute/,
+	"status message",
+];
 const HOW_TO_READ_MARKERS = [
 	"One box is one unit of work",
 	"names the evidence",

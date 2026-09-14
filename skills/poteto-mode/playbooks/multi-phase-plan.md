@@ -33,12 +33,12 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 
 - [ ] State the protocol and this plan to the operator, then stop. Start execution only on the operator's explicit go.
 - [ ] On the operator's go, record the objective of record in the plan's Objective section with this exact text. "<The plan path, the PR ids in order, the verification rule, who merges, and the done condition.>" pi has no `/goal` command, so this section is what every tick re-reads.
-- [ ] Read these from trunk at program start. Re-read them at every tick.
-  - [ ] `git show origin/main:skills/poteto-mode/playbooks/<execution playbook>.md`
-  - [ ] `git show origin/main:skills/swarm/SKILL.md`
-  - [ ] `git show origin/main:<verification skill path>`
-  - [ ] `git show origin/main:skills/poteto-mode/playbooks/opening-a-pr.md`
-  - [ ] `git show origin/main:skills/<each other leaf skill the program uses>`
+- [ ] Read these from trunk at program start. Re-read them at every tick. Resolve the trunk branch from `git symbolic-ref --short refs/remotes/origin/HEAD` (strip the `origin/` prefix; fall back to `git remote show origin`); never assume `main`.
+  - [ ] `git show origin/<trunk>:skills/poteto-mode/playbooks/<execution playbook>.md`
+  - [ ] `git show origin/<trunk>:skills/swarm/SKILL.md`
+  - [ ] `git show origin/<trunk>:<verification skill path>`
+  - [ ] `git show origin/<trunk>:skills/poteto-mode/playbooks/opening-a-pr.md`
+  - [ ] `git show origin/<trunk>:skills/<each other leaf skill the program uses>`
 - [ ] Arm the 30-minute audit tick as a real shell heartbeat or a scheduled run. Never leave the cadence to memory.
 - [ ] Use this tick prompt, verbatim. "Re-read the execution playbook from trunk and the recorded objective. Audit the operation against both and fix drift in this tick. Probe every active lane and judge progress by side effects only. Stand down a stuck lane and dispatch its replacement now. Then post a status message to the operator in chat, whether or not anything changed, with the queue table of PR, owner, state, and head SHA, the verdicts since the last tick, what merged, open operator gates, and blockers."
 - [ ] On the operator's hold or stand-down, send every owner a zero-writes order at once.
@@ -47,7 +47,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 
 - [ ] Spawn one owner per PR with the full lifecycle the execution playbook names.
 - [ ] Follow this dependency graph. Start dependent work only after its parent merges, or base it on the parent branch when the execution playbook stacks.
-  - [ ] <PR id> and <PR id> are independent and first. Both branch from `main`.
+  - [ ] <PR id> and <PR id> are independent and first. Both branch from trunk.
   - [ ] <PR id> after <PR id>.
 - [ ] Hold the file boundaries. <PR id or class> touches only `<glob>`.
 - [ ] Hold the review gate. <PR ids> change an interaction. They wait for the operator's review in chat with screenshots and a video before merge.

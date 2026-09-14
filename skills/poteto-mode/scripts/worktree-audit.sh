@@ -4,18 +4,80 @@
 # operated in it. Emits a table sorted by size with a suggested bucket. Never
 # deletes anything; deletion stays a human-gated step in the playbook.
 #
-# Usage: worktree-audit.sh [repo-path]   (defaults to the current repo)
+# Usage: worktree-audit.sh [--trunk <branch>] [repo-path]
+#   (defaults to the current repo; the trunk branch is derived from origin's
+#    default branch, then the main worktree's branch, never assumed `main`)
 set -u
 
-repo="${1:-$(git rev-parse --show-toplevel 2>/dev/null)}"
+requested_trunk=""
+repo=""
+while [ $# -gt 0 ]; do
+	case "$1" in
+		--trunk)
+			[ $# -ge 2 ] || { echo "--trunk needs a branch name" >&2; exit 2; }
+			requested_trunk="$2"
+			shift 2
+			;;
+		-h | --help)
+			echo "Usage: worktree-audit.sh [--trunk <branch>] [repo-path]"
+			exit 0
+			;;
+		-*)
+			echo "unknown option: $1" >&2
+			exit 2
+			;;
+		*)
+			repo="$1"
+			shift
+			;;
+	esac
+done
+
+repo="${repo:-$(git rev-parse --show-toplevel 2>/dev/null)}"
 [ -z "$repo" ] && { echo "not in a git repo; pass a repo path" >&2; exit 1; }
 cd "$repo" || exit 1
 
 # Main worktree is the first entry; everything else is a candidate.
 main_wt=$(git worktree list --porcelain | awk '/^worktree /{print $2; exit}')
 
-# origin/main drives the merge check. Best-effort; stale is fine for a first pass.
-git fetch origin main --quiet 2>/dev/null || echo "warn: could not fetch origin/main; merged column may be stale" >&2
+# The trunk branch drives the merge check. Resolve it, never assume `main`:
+# an explicit --trunk, then origin's default branch (the local origin/HEAD ref,
+# then the remote's own HEAD), then the main worktree's branch for a repo with
+# no usable origin.
+trunk="$requested_trunk"
+if [ -z "$trunk" ]; then
+	trunk=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null) || trunk=""
+	trunk="${trunk#origin/}"
+	if [ -z "$trunk" ] && git remote get-url origin >/dev/null 2>&1; then
+		# Not set locally; ask the remote once and cache the answer for later runs.
+		git remote set-head origin --auto >/dev/null 2>&1 || true
+		trunk=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null) || trunk=""
+		trunk="${trunk#origin/}"
+	fi
+	if [ -z "$trunk" ]; then
+		trunk=$(git -C "$main_wt" symbolic-ref --quiet --short HEAD 2>/dev/null) || trunk=""
+	fi
+fi
+
+# Best-effort fetch of the trunk; stale is fine for a first pass.
+trunk_ref=""
+if [ -n "$trunk" ] && git remote get-url origin >/dev/null 2>&1; then
+	git fetch origin "$trunk" --quiet 2>/dev/null \
+		|| echo "warn: could not fetch origin/$trunk; merged column may be stale" >&2
+	if git show-ref --verify --quiet "refs/remotes/origin/$trunk"; then
+		trunk_ref="origin/$trunk"
+	else
+		trunk_ref="refs/heads/$trunk"
+	fi
+elif [ -n "$trunk" ]; then
+	trunk_ref="refs/heads/$trunk"
+else
+	echo "warn: could not resolve the trunk branch; pass --trunk <branch>; merged column is unknown" >&2
+fi
+if [ -n "$trunk_ref" ] && ! git rev-parse --verify --quiet "$trunk_ref" >/dev/null; then
+	echo "warn: trunk '$trunk' does not resolve; pass --trunk <branch>; merged column is unknown" >&2
+	trunk_ref=""
+fi
 
 # PR state by branch, fetched once. Empty if gh is unavailable.
 prs=$(mktemp)
@@ -53,9 +115,13 @@ git worktree list --porcelain | awk '/^worktree /{print $2}' | while read -r wt;
 	head_ts=$(git -C "$wt" log -1 --format='%ct' HEAD 2>/dev/null || echo 0)
 	age=$([ "$head_ts" -gt 0 ] 2>/dev/null && echo "$(( (now - head_ts) / 86400 ))d" || echo "?")
 
-	# Squash-merged branches are not ancestors of main, so PR state is the
+	# Squash-merged branches are not ancestors of trunk, so PR state is the
 	# real signal; merge-base only catches fast-forward/rebase merges.
-	git merge-base --is-ancestor "$head" origin/main 2>/dev/null && merged=YES || merged=no
+	if [ -n "$trunk_ref" ]; then
+		git merge-base --is-ancestor "$head" "$trunk_ref" 2>/dev/null && merged=YES || merged=no
+	else
+		merged="?"
+	fi
 
 	# Distinguish real WIP (tracked edits) from disposable untracked scratch.
 	porcelain=$(git -C "$wt" status --porcelain 2>/dev/null)

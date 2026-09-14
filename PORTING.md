@@ -217,7 +217,7 @@ These are the things the port could not carry over, each with the concrete reaso
 | `skills/poteto-mode/references/bugbot-triage.md` | adapted | `skills/poteto-mode/references/review-bot-triage.md` | Renamed and generalized from one vendor's review bot to review bots in general. |
 | `skills/poteto-mode/scripts/bootstrap.ts` | dropped | `(none)` | Upstream's first-run installer for `commander`, removed after the port. pi runs `npm install` at the package root for npm and git installs, and clone users run it there. |
 | `skills/poteto-mode/scripts/bun.lock` | dropped | `(none)` | Bun lockfile. The scripts now install and run under npm and Node. |
-| `skills/poteto-mode/scripts/check-plan.mjs` | adapted | `skills/poteto-mode/scripts/check-plan.mjs` | The plan linter's lane example no longer names a vendor model. |
+| `skills/poteto-mode/scripts/check-plan.mjs` | adapted | `skills/poteto-mode/scripts/check-plan.mjs` | The plan linter's lane example no longer names a vendor model. Its program markers require a resolved `origin/<trunk>` re-read command and the no-assumption rule, not the literal `origin/main`. |
 | `skills/poteto-mode/scripts/orch/orch.test.ts` | adapted | `skills/poteto-mode/scripts/orch/orch.test.ts` | `bun:test` and `Bun.spawn*` replaced by the Node test runner and `node:child_process`. |
 | `skills/poteto-mode/scripts/orch/orch.ts` | adapted | `skills/poteto-mode/scripts/orch/orch.ts` | Shebang changed from `bun` to `node`. |
 | `skills/poteto-mode/scripts/orch/store.ts` | adapted | `skills/poteto-mode/scripts/orch/store.ts` | One TypeScript parameter property rewritten so Node's strip-only loader can run the file. |
@@ -234,7 +234,7 @@ These are the things the port could not carry over, each with the concrete reaso
 | `skills/poteto-mode/scripts/watch-pr/types.compile.ts` | adapted | `skills/poteto-mode/scripts/watch-pr/types.compile.ts` | Ported for pi: frontmatter made spec-compliant, Cursor primitives replaced, skill references rewritten to `/skill:` commands. |
 | `skills/poteto-mode/scripts/watch-pr/types.ts` | adapted | `skills/poteto-mode/scripts/watch-pr/types.ts` | Ported for pi: frontmatter made spec-compliant, Cursor primitives replaced, skill references rewritten to `/skill:` commands. |
 | `skills/poteto-mode/scripts/watch-pr/watch-pr` | adapted | `skills/poteto-mode/scripts/watch-pr/watch-pr` | Shebang changed from `bun` to `node`. |
-| `skills/poteto-mode/scripts/worktree-audit.sh` | adapted | `skills/poteto-mode/scripts/worktree-audit.sh` | Session discovery moved from Cursor transcripts to pi session files; GNU/BSD `stat` and `date` handled; `LAST_CHAT`/`verify-recent-chat` renamed. |
+| `skills/poteto-mode/scripts/worktree-audit.sh` | adapted | `skills/poteto-mode/scripts/worktree-audit.sh` | Session discovery moved from Cursor transcripts to pi session files; GNU/BSD `stat` and `date` handled; `LAST_CHAT`/`verify-recent-chat` renamed. The merge check derives the trunk branch (origin's default, then the main worktree's branch) and takes a `--trunk <branch>` override instead of assuming `main`. |
 | `skills/principle-attack-the-premise/SKILL.md` | adapted | `skills/principle-attack-the-premise/SKILL.md` | Principle body kept; Cursor-only tool names and slash-command forms replaced with pi equivalents. |
 | `skills/principle-boundary-discipline/SKILL.md` | adapted | `skills/principle-boundary-discipline/SKILL.md` | Principle body kept; Cursor-only tool names and slash-command forms replaced with pi equivalents. |
 | `skills/principle-build-the-lever/SKILL.md` | adapted | `skills/principle-build-the-lever/SKILL.md` | Principle body kept; Cursor-only tool names and slash-command forms replaced with pi equivalents. |
@@ -352,7 +352,7 @@ Ordered by area. Each entry is a change the captain can disagree with.
 1. **`package.json` replaces `.cursor-plugin/plugin.json`.** Name `pi-pstack`, version `0.15.2` (tracks upstream), `private: true`, `type: module`, `license: MIT`, keyword `pi-package`, and a `pi` manifest declaring `extensions/` and `skills/`. The upstream `displayName`, `category`, `tags`, `logo`, `homepage`, and `repository` fields have no pi manifest equivalent; the repository and homepage are in `README.md` instead. The `prompts` manifest entry was removed because the package ships no prompt templates: both upstream slash commands are now skills.
 2. **Install path changed.** Upstream: install the plugin from Cursor's marketplace. Here: `pi install git:github.com/gh0stwin/pi-pstack`. `pi install -l` is the project-scoped form Benny uses.
 3. **`dependencies` gained `commander@14.0.0`** for the ported `watch-pr` and `orch` CLIs. It is declared at the package root because pi runs `npm install` there and Node resolves upward from the importing file. `dependencies` also carries `@juicesharp/rpiv-ask-user-question@2.9.0`, bundled and loaded through the `pi` manifest, for the `ask_user_question` tool that replaces Cursor's `AskQuestion`. `peerDependencies` lists pi's bundled packages (`@earendil-works/pi-*`, `typebox`) with `"*"`, per the package docs.
-4. **Build, test, and lint setup added.** `npm run typecheck` typechecks `extensions/`, `automations/`, and the scripts tree; `npm test` runs all 150 tests through `node --test`; `npm run check` runs both. Upstream had no package-level check.
+4. **Build, test, and lint setup added.** `npm run typecheck` typechecks `extensions/`, `automations/`, and the scripts tree; `npm test` runs all 155 tests through `node --test`; `npm run check` runs both. Upstream had no package-level check.
 
 ### Skills
 
@@ -368,11 +368,11 @@ Ordered by area. Each entry is a change the captain can disagree with.
 14. **`skills/reflect/SKILL.md` and its reviewers** now hand skill creation to the ported `create-skill` skill and describe sessions rather than Cursor transcripts.
 15. **`skills/poteto-mode/references/bugbot-triage.md` → `review-bot-triage.md`.** Renamed and rewritten so the guidance is about review bots in general, not one vendor's bot.
 16. **`skills/poteto-mode/SKILL.md` updated**: `AskQuestion` → the `ask_user_question` tool from `@juicesharp/rpiv-ask-user-question`, `Task`/`subagent_type` → the `subagent` tool's `agent`/`role`/`readonly` parameters, model slugs → roles, `/loop` → explicit wake signals, Bugbot → review bots, and the `control-cli`/`control-ui` route → a project verification skill. The `mode`, `icon`, `color`, and `reminder` frontmatter fields were dropped.
-17. **`skills/poteto-mode/playbooks/*` (23 playbooks) adapted.** `deslop`, `no-comments`, and the other skill routes use `/skill:` forms; `run_in_background` is gone; autonomous runs name a wake signal instead of `/loop`; PR-status requests no longer disambiguate against a Cursor built-in; the eval playbook's chain-verification step reads the `subagent` result's tool-call trail rather than Cursor agent transcripts.
+17. **`skills/poteto-mode/playbooks/*` (23 playbooks) adapted.** `deslop`, `no-comments`, and the other skill routes use `/skill:` forms; `run_in_background` is gone; autonomous runs name a wake signal instead of `/loop`; PR-status requests no longer disambiguate against a Cursor built-in; the eval playbook's chain-verification step reads the `subagent` result's tool-call trail rather than Cursor agent transcripts. The trunk re-read steps resolve the repository's default branch instead of hardcoding `origin/main`.
 
 ### Agents and the subagent extension
 
-18. **`agents/comment-sicko.md` and `agents/poteto-agent.md` kept as agent definitions**, with the Cursor `subagent_type` framing replaced by frontmatter (`name`, `description`, optional `tools`, `model`, `readonly`) that the extension reads.
+18. **`agents/comment-sicko.md` and `agents/poteto-agent.md` kept as agent definitions**, with the Cursor `subagent_type` framing replaced by frontmatter (`name`, `description`, optional `tools`, `model`, `readonly`) that the extension reads. Comment Sicko's diff scope names the base branch with `main` only as the documented default.
 19. **`agents/worker.md` added** as the general-purpose delegate the playbooks needed.
 20. **`extensions/subagent/` added.** A `subagent` tool (single, parallel with a cap of 8 tasks and 4 concurrent, and chained with `{previous}` substitution), a `pstack_roles` tool, and a `/pstack-models` command. It spawns a real `pi` process per task with `--mode json -p --no-session`, parses usage, stop reason, and each task's tool calls from the JSON stream, summarizes the files a child read and modified in the result text, caps per-task output at 50 KB, and cleans up its temporary system-prompt files.
 21. **Agent discovery order** is package `agents/` → `~/.pi/agent/agents/` → `.pi/agents/` (trusted projects only), with later entries winning by name.
@@ -383,9 +383,9 @@ Ordered by area. Each entry is a change the captain can disagree with.
 23. **`watch-pr` ported to Node.** `#!/usr/bin/env node`; `bun:test` replaced by `node:test` plus the new `expect` shim; all 38 upstream tests kept and passing, with the suite at 40 today.
 24. **`orch` ported to Node.** `Bun.spawnSync` → `node:child_process.spawnSync`, `Bun.spawn` → `spawn` + `once(child, "exit")`, `import.meta.dir` → `import.meta.dirname`, and one TypeScript parameter property in `store.ts` rewritten because Node's strip-only loader rejects it. All 14 tests kept and passing.
 25. **`bootstrap.ts` removed.** Upstream installed its runtime dependency on first use. pi runs `npm install` at the package root for npm and git installs, and a clone user runs it there, so the fallback and its install stamp are gone. `bun.lock` is gone too.
-26. **`worktree-audit.sh` ported to pi sessions.** It resolves the session directory from `PI_CODING_AGENT_SESSION_DIR` / `PI_CODING_AGENT_DIR`, searches both the repository-level session directory and each worktree's own directory (pi keys sessions by the session's cwd), handles GNU and BSD `stat`/`date`, and renames the `LAST_CHAT` column to `LAST_SESSION` and the `verify-recent-chat` bucket to `verify-recent-session`.
+26. **`worktree-audit.sh` ported to pi sessions.** It resolves the session directory from `PI_CODING_AGENT_SESSION_DIR` / `PI_CODING_AGENT_DIR`, searches both the repository-level session directory and each worktree's own directory (pi keys sessions by the session's cwd), handles GNU and BSD `stat`/`date`, and renames the `LAST_CHAT` column to `LAST_SESSION` and the `verify-recent-chat` bucket to `verify-recent-session`. Its merge check also resolves the trunk branch instead of assuming `main`: `--trunk <branch>` wins, then origin's default branch, then the main worktree's branch, and an unresolvable trunk reports `?` rather than misclassifying.
 27. **Review-bot detection generalized.** `isBugbot`/`bugbotReviewPasses` became `isReviewBot`/`reviewBotPasses` across `github.ts`, `types.ts`, `render.ts`, `policy.ts`, and the tests. The detector now matches a list of known review-bot logins plus generic run markers. Cursor's Bugbot is not in the list: a repository that runs it must add its login to `REVIEW_BOT_LOGINS`.
-28. **`check-plan.mjs` no longer names a vendor model** in its lane example, and its loop variable was renamed.
+28. **`check-plan.mjs` no longer names a vendor model** in its lane example, and its loop variable was renamed. Its program markers now require a plan to name a resolved `origin/<trunk>` re-read command and the no-assumption rule, so a plan copied on a master-trunk repository is not rejected for lacking the `origin/main` literal.
 29. **`scripts/package.json` rewritten**: `node --test` and Node types; `bun-types` and `bun.lock` dropped. `watch-pr/tsconfig.json` was replaced by one `scripts/tsconfig.json`.
 30. **`skills/poteto-mode/playbooks/worktree-cleanup.md` updated** for the renamed column and bucket, and for reading pi sessions rather than chats and transcripts.
 
@@ -469,7 +469,7 @@ After the intake-binding change, `loadSkillsFromDir` against `automations/benny/
 ### Scripts
 
 ```bash
-npm run check        # typecheck (extensions + automations + scripts) and 150 tests
+npm run check        # typecheck (extensions + automations + scripts) and 155 tests
 ```
 
 ```text
@@ -478,11 +478,12 @@ orch:     14 tests, 0 fail
 benny-run: 37 tests, 0 fail
 installation: 9 tests, 0 fail
 subagent: 48 tests, 0 fail
-worktree-audit: 2 tests, 0 fail
-total:    150 tests, 0 fail
+worktree-audit: 5 tests, 0 fail
+check-plan:    2 tests, 0 fail
+total:    155 tests, 0 fail
 ```
 
-All under Node 24 with `node --test`. `worktree-audit.sh` passes `bash -n` and was run against this repository (it produced a row with a `LAST_SESSION` date and the `hold-wip` bucket). `check-plan.mjs` behavior is unchanged.
+All under Node 24 with `node --test`. `worktree-audit.sh` passes `bash -n` and was run against this repository (it produced a row with a `LAST_SESSION` date and the `hold-wip` bucket), and against a master-trunk repo where the resolved trunk reports `merged=YES` instead of `merged=no`. `check-plan.mjs` rejects a plan that hardcodes or leaves unresolved the trunk re-read ref.
 
 ### Cursor-residue audit
 
