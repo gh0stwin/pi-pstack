@@ -46,7 +46,7 @@ Start pi and run:
 
 [`/skill:setup-pstack`](../../skills/setup-pstack/SKILL.md) detects the models you have access to, shows you each role (code delegates, judgment, the review panels), and asks what you want. Answer the questions. It writes `~/.pi/agent/pstack-models.json`, the role config the `subagent` tool reads.
 
-You only override what you care about. A role with no key in the config keeps the built-in default. To restore a default later, delete that role's line, or just run `/skill:setup-pstack` again.
+You only override what you care about. A role with no key in the config keeps the built-in default: every role inherits your parent session model, so pstack assumes no provider and works before you configure anything. The one part worth configuring is the panels. Each panel role defaults to a single inherited runner, and a panel only has independent perspectives when its entries are distinct models, so setup asks for a list per panel role. To restore a default later, delete that role's line, or just run `/skill:setup-pstack` again.
 
 You might be wondering what happens if you let pi pick the model. Set a role to `inherit-parent` or `auto` and pstack omits the subagent `--model` flag, so the subagent inherits your parent session model. Both values mean the same thing, and neither is a model id. For a panel role the value is a list, and one subagent runs per entry, so the list length sets the panel size. Setup also configures `swarm workers`, the default model for every `/skill:swarm` worker unless a race names a model for each arm.
 

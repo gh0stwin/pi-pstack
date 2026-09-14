@@ -20,47 +20,30 @@ export type RoleValue = string | readonly string[];
 export type RoleConfig = Record<string, RoleValue>;
 
 /**
- * Defaults chosen from `pi --list-models` on the machine this port was built on.
- * `/skill:setup-pstack` rewrites these for the models a user actually has.
+ * Built-in defaults. Every role inherits the parent session model, so an
+ * unconfigured install assumes no provider and works in any pi setup. Panels
+ * are the exception: a panel role is only a panel when its entries are
+ * distinct models, so `/skill:setup-pstack` assigns it a list. Each panel
+ * default is a one-entry list because the inherited runner is a single model.
  */
 export const DEFAULT_ROLES: RoleConfig = {
-  "feature, refactoring": "deepinfra/deepseek-ai/DeepSeek-V4-Flash-0731",
-  "bug-fix": "deepinfra/zai-org/GLM-5.3-Flash",
-  "perf-issue": "deepinfra/zai-org/GLM-5.3-Flash",
-  hillclimb: "deepinfra/zai-org/GLM-5.3-Flash",
-  "judgment and prose": "deepinfra/zai-org/GLM-5.3-Flash",
-  "hardest tasks": "deepinfra/zai-org/GLM-5.3-Flash",
-  "how explorer": "deepinfra/deepseek-ai/DeepSeek-V4-Flash-0731",
-  "how explainer": "deepinfra/zai-org/GLM-5.3-Flash",
-  "why investigators": "deepinfra/deepseek-ai/DeepSeek-V4-Flash-0731",
-  "why synthesizer": "deepinfra/zai-org/GLM-5.3-Flash",
-  "reflect tooling": "deepinfra/google/gemini-3.1-pro",
-  "reflect judgment, reflect divergent, reflect synthesizer": "deepinfra/zai-org/GLM-5.3-Flash",
-  "arena runners": [
-    "deepinfra/zai-org/GLM-5.3-Flash",
-    "deepinfra/google/gemini-3.1-pro",
-    "deepinfra/deepseek-ai/DeepSeek-V4-Flash-0731",
-    "deepinfra/Qwen/Qwen3-235B-A22B-Thinking-2507",
-  ],
-  "arena cross-judge pool": [
-    "deepinfra/zai-org/GLM-5.3-Flash",
-    "deepinfra/google/gemini-3.1-pro",
-    "deepinfra/deepseek-ai/DeepSeek-V4-Flash-0731",
-    "deepinfra/Qwen/Qwen3-235B-A22B-Thinking-2507",
-  ],
-  "swarm workers": "deepinfra/deepseek-ai/DeepSeek-V4-Flash-0731",
-  "architect runners": [
-    "deepinfra/zai-org/GLM-5.3-Flash",
-    "deepinfra/google/gemini-3.1-pro",
-    "deepinfra/deepseek-ai/DeepSeek-V4-Flash-0731",
-    "deepinfra/Qwen/Qwen3-235B-A22B-Thinking-2507",
-  ],
-  "interrogate reviewers": [
-    "deepinfra/zai-org/GLM-5.3-Flash",
-    "deepinfra/google/gemini-3.1-pro",
-    "deepinfra/deepseek-ai/DeepSeek-V4-Flash-0731",
-    "deepinfra/Qwen/Qwen3-235B-A22B-Thinking-2507",
-  ],
+  "feature, refactoring": "inherit-parent",
+  "bug-fix": "inherit-parent",
+  "perf-issue": "inherit-parent",
+  hillclimb: "inherit-parent",
+  "judgment and prose": "inherit-parent",
+  "hardest tasks": "inherit-parent",
+  "how explorer": "inherit-parent",
+  "how explainer": "inherit-parent",
+  "why investigators": "inherit-parent",
+  "why synthesizer": "inherit-parent",
+  "reflect tooling": "inherit-parent",
+  "reflect judgment, reflect divergent, reflect synthesizer": "inherit-parent",
+  "arena runners": ["inherit-parent"],
+  "arena cross-judge pool": ["inherit-parent"],
+  "swarm workers": "inherit-parent",
+  "architect runners": ["inherit-parent"],
+  "interrogate reviewers": ["inherit-parent"],
 };
 
 /** `inherit-parent` and `auto` mean: run on the parent session model. */

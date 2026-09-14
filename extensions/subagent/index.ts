@@ -14,7 +14,9 @@
  * Model resolution order: `model` parameter, then `role` parameter against
  * `pstack-models.json`, then the agent definition's `model`, then the parent
  * session model. `inherit-parent` and `auto` role values select that parent
- * model and pass it to the child explicitly.
+ * model and pass it to the child explicitly. Every built-in role default is
+ * `inherit-parent`, so an unconfigured install assumes no provider; panel
+ * roles need distinct configured models to supply independent perspectives.
  *
  * Child pi resolution order: the `PI_PSTACK_PI_BIN` override, the installed pi
  * CLI entry from this extension's own import chain, then `pi` on PATH. Never
@@ -590,7 +592,7 @@ export default function pstackSubagent(pi: ExtensionAPI) {
     name: "subagent",
     label: "Subagent",
     description:
-      "Delegate a task to an isolated subagent process with its own context window. Supports single, parallel, and chained modes, pstack role-based model routing, and agent definitions from the pi-pstack package (worker, poteto-agent, comment-sicko).",
+      "Delegate a task to an isolated subagent process with its own context window. Supports single, parallel, and chained modes, pstack role-based model routing, and agent definitions from the pi-pstack package (worker, poteto-agent, comment-sicko). Every role inherits the parent session model by default; panel roles (arena runners, arena cross-judge pool, architect runners, interrogate reviewers) need distinct models for independent perspectives, configured in pstack-models.json.",
     promptSnippet: "Delegate tasks to isolated subagents (single, parallel, or chain) with role-routed models",
     promptGuidelines: [
       "Use subagent to delegate work that should run in an isolated context window, and spawn parallel subagent calls in one message to fan out.",

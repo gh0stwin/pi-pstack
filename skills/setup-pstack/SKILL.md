@@ -11,39 +11,19 @@ Write `~/.pi/agent/pstack-models.json`, the role-to-model config the `subagent` 
 
 ### 1. Detect available models
 
-Run `pi --list-models` and read the `provider` and `model` columns. That is the dependable source: pi only lists models whose provider has configured auth. Use every `provider/model` pair as a selectable value. If the list is empty, ask the user to configure a provider with `/login` first and stop.
+Run `pi --list-models` and read the `provider` and `model` columns. That is the dependable source: pi only lists models whose provider has configured auth. Use every `provider/model` pair as a selectable value. If the list is empty, the built-in defaults already run every role on the parent session model, so there is nothing to configure: tell the user that and stop.
 
 The aliases `inherit-parent` and `auto` are always valid even though they are not detected model ids.
 
 ### 2. Load current state
 
-Read `~/.pi/agent/pstack-models.json` if it exists. Use its values for the roles it names and the built-in defaults below for any role it omits. If the file does not exist, start from these defaults, chosen from the pi catalog at port time:
-
-```
-feature, refactoring: deepinfra/deepseek-ai/DeepSeek-V4-Flash-0731
-bug-fix: deepinfra/zai-org/GLM-5.3-Flash
-perf-issue: deepinfra/zai-org/GLM-5.3-Flash
-hillclimb: deepinfra/zai-org/GLM-5.3-Flash
-judgment and prose: deepinfra/zai-org/GLM-5.3-Flash
-hardest tasks: deepinfra/zai-org/GLM-5.3-Flash
-how explorer: deepinfra/deepseek-ai/DeepSeek-V4-Flash-0731
-how explainer: deepinfra/zai-org/GLM-5.3-Flash
-why investigators: deepinfra/deepseek-ai/DeepSeek-V4-Flash-0731
-why synthesizer: deepinfra/zai-org/GLM-5.3-Flash
-reflect tooling: deepinfra/google/gemini-3.1-pro
-reflect judgment, reflect divergent, reflect synthesizer: deepinfra/zai-org/GLM-5.3-Flash
-arena runners: deepinfra/zai-org/GLM-5.3-Flash, deepinfra/google/gemini-3.1-pro, deepinfra/deepseek-ai/DeepSeek-V4-Flash-0731, deepinfra/Qwen/Qwen3-235B-A22B-Thinking-2507
-arena cross-judge pool: deepinfra/zai-org/GLM-5.3-Flash, deepinfra/google/gemini-3.1-pro, deepinfra/deepseek-ai/DeepSeek-V4-Flash-0731, deepinfra/Qwen/Qwen3-235B-A22B-Thinking-2507
-swarm workers: deepinfra/deepseek-ai/DeepSeek-V4-Flash-0731
-architect runners: deepinfra/zai-org/GLM-5.3-Flash, deepinfra/google/gemini-3.1-pro, deepinfra/deepseek-ai/DeepSeek-V4-Flash-0731, deepinfra/Qwen/Qwen3-235B-A22B-Thinking-2507
-interrogate reviewers: deepinfra/zai-org/GLM-5.3-Flash, deepinfra/google/gemini-3.1-pro, deepinfra/deepseek-ai/DeepSeek-V4-Flash-0731, deepinfra/Qwen/Qwen3-235B-A22B-Thinking-2507
-```
+Read `~/.pi/agent/pstack-models.json` if it exists. Use its values for the roles it names; every role it omits keeps the built-in default, `inherit-parent`. The subagent then runs on the parent session model, so pstack needs no particular provider before you configure anything. Run `/pstack-models` or call the `pstack_roles` tool to list every role label with its effective value. Panels are the one part worth configuring, because a panel only has independent perspectives when its entries are distinct models.
 
 ### 3. Map and confirm
 
-Show every role with its current model, marking any model not in the detected set as needing a choice. Ask whether to accept as-is or change specific roles, offering the detected models plus `inherit-parent` and `auto` (both mean: this role runs on the parent session model, so omitting `--model`). Prefer the `ask_user_question` tool (from `@juicesharp/rpiv-ask-user-question`) over free text.
+Show every role with its current model, marking any non-alias model not in the detected set as needing a choice. Ask whether to accept as-is or change specific roles, offering the detected models plus `inherit-parent` and `auto` (both mean: this role runs on the parent session model, so omitting `--model`). Prefer the `ask_user_question` tool (from `@juicesharp/rpiv-ask-user-question`) over free text.
 
-For panel roles (arena runners, arena cross-judge pool, architect runners, interrogate reviewers) the value is a list, and one subagent runs per entry, alias entries included, so the list length sets the panel size. `arena cross-judge pool` is also a list, but Arena selects one value from it whose model family differs from the parent's when possible. `swarm workers` is the default model for every worker unless a race or comparison assigns another model per arm.
+For panel roles (arena runners, arena cross-judge pool, architect runners, interrogate reviewers) the value is a list, and one subagent runs per entry, alias entries included, so the list length sets the panel size. A panel needs distinct models to supply independent perspectives; a list of `inherit-parent` entries, or one model repeated, gives no diversity, so ask for distinct models per panel role. `arena cross-judge pool` is also a list, but Arena selects one value from it whose model family differs from the parent's when possible. `swarm workers` is the default model for every worker unless a race or comparison assigns another model per arm.
 
 ### 4. Validate
 
@@ -55,18 +35,13 @@ Write `~/.pi/agent/pstack-models.json`, one key per role label, using the same l
 
 ```json
 {
-  "feature, refactoring": "deepinfra/deepseek-ai/DeepSeek-V4-Flash-0731",
-  "bug-fix": "deepinfra/zai-org/GLM-5.3-Flash",
-  "arena runners": [
-    "deepinfra/zai-org/GLM-5.3-Flash",
-    "deepinfra/google/gemini-3.1-pro",
-    "deepinfra/deepseek-ai/DeepSeek-V4-Flash-0731",
-    "deepinfra/Qwen/Qwen3-235B-A22B-Thinking-2507"
-  ]
+  "feature, refactoring": "inherit-parent",
+  "bug-fix": "inherit-parent",
+  "arena runners": ["<provider>/<model-a>", "<provider>/<model-b>", "<provider>/<model-c>"]
 }
 ```
 
-Every role keeps a line. Delete a line to fall back to the built-in default for that role. A project can add `.pi/pstack-models.json` with the same shape; project keys override user keys for subagents spawned in that project.
+Every role keeps a line. Delete a line to fall back to the built-in default for that role, which is `inherit-parent`. The `<provider>/<model-*>` entries in the panel list are placeholders: replace them with distinct ids from the detected set. A project can add `.pi/pstack-models.json` with the same shape; project keys override user keys for subagents spawned in that project.
 
 ### 6. Confirm
 
