@@ -79,7 +79,7 @@ Show the draft to the user and take feedback. Expect multiple iterations. Cut ru
 
 ### 6. Land it
 
-Work in a worktree off main. Commit and open a PR. Don't push to main directly.
+Work in a worktree off trunk. Commit and open a PR. Don't push to trunk directly.
 
 ## Guardrails
 

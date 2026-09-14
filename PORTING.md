@@ -483,7 +483,7 @@ check-plan:    2 tests, 0 fail
 total:    155 tests, 0 fail
 ```
 
-All under Node 24 with `node --test`. `worktree-audit.sh` passes `bash -n` and was run against this repository (it produced a row with a `LAST_SESSION` date and the `hold-wip` bucket), and against a master-trunk repo where the resolved trunk reports `merged=YES` instead of `merged=no`. `check-plan.mjs` rejects a plan that hardcodes or leaves unresolved the trunk re-read ref.
+All under Node 24 with `node --test`. `worktree-audit.sh` passes `bash -n` and was run against this repository (it produced a row with a `LAST_SESSION` date and the `hold-wip` bucket), and against a master-trunk repo where the resolved trunk reports `merged=YES` instead of `merged=no`. `check-plan.mjs` rejects a plan that leaves the trunk re-read ref as the unresolved `<trunk>` placeholder.
 
 ### Cursor-residue audit
 
